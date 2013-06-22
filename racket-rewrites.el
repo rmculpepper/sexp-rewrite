@@ -35,46 +35,27 @@
 (setq sexprw-auto-expression-tactics
       (append '(letrec-to-definitions
                 begin-trivial
-                if
+                if-to-cond
                 cond-else-absorb-if
                 cond-else-absorb-cond
                 map for-each ormap andmap foldl)
               sexprw-auto-expression-tactics))
 
 (setq sexprw-auto-conditional-tactics
-      (append '(if
+      (append '(if-to-cond
                 cond-else-absorb-if
                 cond-else-absorb-cond
                 unsafe-let-if-to-cond
                 unsafe-cond-else-absorb-let-if)
               sexprw-auto-conditional-tactics))
 
-(define-sexprw-tactic letrec-to-definitions
-  (sexprw-rewrite
-   '(letrec (($name %rhs) ...) %%body)
-   '(let () !NL (!SPLICE (define $name %rhs) !NL) ... %%body)))
-
-';; example for letrec-to-definitions
-(letrec ([odd? (lambda (x) (not (even? x)))]
-         [even? (lambda (x) (or (zero? x) (even? (sub1 x))))])
-  odd?)
-
-(define-sexprw-tactic begin-trivial
-  ;; See also let-splice, begin-splice
-  (sexprw-rewrite
-   '(begin %body)
-   '%body))
-
-';; example for begin-trivial
-(begin 5)
-
-(define-sexprw-tactic if
+(define-sexprw-tactic if-to-cond
   (sexprw-rewrite
    '(if %test %then %else)
    '(cond (!SQ %test %then) !NL
           (!SQ else %else))))
 
-';; example for if, else-absorb-*
+';; example for if-to-cond, cond-else-absorb-*
 (if (< x 10)
     (f x)
     (if (> x 10)
@@ -123,6 +104,25 @@
   (if different-var
       (cdr x)
       (error 'no-key)))
+
+(define-sexprw-tactic letrec-to-definitions
+  (sexprw-rewrite
+   '(letrec (($name %rhs) ...) %%body)
+   '(let () !NL (!SPLICE (define $name %rhs) !NL) ... %%body)))
+
+';; example for letrec-to-definitions
+(letrec ([odd? (lambda (x) (not (even? x)))]
+         [even? (lambda (x) (or (zero? x) (even? (sub1 x))))])
+  odd?)
+
+(define-sexprw-tactic begin-trivial
+  ;; See also let-splice, begin-splice
+  (sexprw-rewrite
+   '(begin %body)
+   '%body))
+
+';; example for begin-trivial
+(begin 5)
 
 ;; HO functions to for loops
 
