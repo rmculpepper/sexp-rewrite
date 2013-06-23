@@ -247,9 +247,31 @@
    '(define ($name (!REP $arg)) %%body)
    '(define $name !NL (lambda ((!REP ($arg) $arg)) !NL %%body))))
 
-;; TODO: eta
-;;    expr => (lambda (x ...) (expr x ...))
-;; Needs input from user.
+(define-sexprw-tactic eta-expand
+  (sexprw-rewrite
+   '%expr
+   '(lambda ($arg ...) %expr)
+   (lambda (env)
+     (message "Running guard!")
+     (let ((argn (read-number "Number of arguments: " 1)))
+       (message "got number %S" argn)
+       (unless (and (integerp argn) (>= argn 0))
+         (error "Bad number of arguments: %S" argn))
+       (message "number is good")
+       (let ((args
+              (cond ((= argn 0)
+                     nil)
+                    ((= argn 1)
+                     (list (list 'atom "x")))
+                    (t
+                     (let ((rargs nil))
+                       (message "about to loop")
+                       (dotimes (i argn)
+                         (message "loop i = %S" i)
+                         (setq rargs (cons (list 'atom (format "x%d" (1+ i))) rargs)))
+                       (reverse rargs))))))
+         (message "args = %S" args)
+         (list (cons (cons '$arg (cons 'rep args)) env)))))))
 
-
-
+';; example for eta-expand
+add1
