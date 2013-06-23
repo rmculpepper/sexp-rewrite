@@ -76,8 +76,7 @@ for more details.")
 ;; ============================================================
 ;; Keybindings
 
-(defvar sexprw-mode-keymap nil)
-(setq sexprw-mode-keymap (make-sparse-keymap))
+(defvar sexprw-mode-keymap (make-sparse-keymap))
 (global-set-key (kbd "C-c C-d") sexprw-mode-keymap)
 
 (define-key sexprw-mode-keymap "e" 'sexprw-auto-expression)
@@ -95,24 +94,54 @@ for more details.")
   "List of tactics tried by `sexprw-auto-expression'.")
 (defvar sexprw-auto-definition-tactics nil
   "List of tactics tried by `sexprw-auto-definition'.")
+  
+(defvar sexprw-tactic-history nil)
+(defvar sexprw-pattern-history nil)
+(defvar sexprw-template-history nil)
 
 (defun sexprw-auto-expression (&optional times)
   "Run the default sexp-rewrite tactics for expressions.
 Customizable via the variable `sexpr-auto-expression-tactics'."
   (interactive "p")
-  (sexprw-run-tactics sexprw-auto-expression-tactics times))
+  (sexprw-execute-tactics sexprw-auto-expression-tactics times))
 (defun sexprw-auto-definition (&optional times)
   "Run the default sexp-rewrite tactics for definitions.
 Customizable via the variable `sexpr-auto-definition-tactics'."
   (interactive "p")
-  (sexprw-run-tactics sexprw-auto-definition-tactics times))
+  (sexprw-execute-tactics sexprw-auto-definition-tactics times))
+
+(defun sexprw-execute-tactic (tactic-name &optional times0)
+  "Read sexprw-rewrite tactic, then try to execute it."
+  (interactive
+   (list (intern 
+          (completing-read "Tactic: "
+                           obarray
+                           'sexprw-tactic-symbolp
+                           t
+                           nil
+                           'sexprw-tactic-history))
+         (prefix-numeric-value current-prefix-arg)))
+  (sexprw-execute-tactics (list tactic-name) times0))
+
+(defun sexprw-execute-tactics (tactic-names times0)
+  (let ((rused (sexprw-run-tactics-until-success tactic-names times0)))
+    (cond ((consp rused)
+           (cond ((= (length rused) 1)
+                  (message "Applied tactic %s" (car rused)))
+                 (t (message "Applied tactics: %s" (reverse rused)))))
+          (t
+           (cond ((= (length tactic-names) 1)
+                  (message "Tactic %s not applicable" (car tactic-names)))
+                 (t (message "No applicable tactic")))))))
+
+;; sexprw-run-tactic* functions return list of successful tactics in reverse order
 
 (defun sexprw-run-tactic (tactic-name)
-  (let* ((tactic-name (if (symbolp tactic-name) tactic-name (intern tactic-name)))
-         (tactic (sexprw-tactic-value tactic-name)))
-    (funcall tactic)))
+  (let* ((tactic (sexprw-tactic-value tactic-name)))
+    (and (funcall tactic)
+         (list tactic-name))))
 
-(defun sexprw-run-tactics (tactics times0)
+(defun sexprw-run-tactics-until-success (tactics &optional times0)
   (let ((times times0)
         success
         rused)
@@ -125,39 +154,7 @@ Customizable via the variable `sexpr-auto-definition-tactics'."
             (setq success t)
             (setq rused (cons tactic rused)))))
       (unless success (setq times 0)))
-    (cond ((consp rused)
-           (cond ((= times0 1)
-                  (message "Applied tactic: %s" (car rused)))
-                 (t (message "Applied tactics: %s" (reverse rused)))))
-          (t
-           (message "No applicable tactic")))))
-  
-(defvar sexprw-tactic-history nil)
-
-(defun sexprw-execute-tactic (tactic-name &optional times0)
-  "Read sexprw-rewrite tactic, then try to execute it."
-  (interactive
-   (list (completing-read "Tactic: "
-                          obarray
-                          'sexprw-tactic-symbolp
-                          t
-                          nil
-                          'sexprw-tactic-history)
-         (prefix-numeric-value current-prefix-arg)))
-  (let* ((times times0)
-         (used 0)
-         (success t))
-    (while (and (> times 0) success)
-      (setq times (1- times))
-      (setq success nil)
-      (when (ignore-errors (sexprw-run-tactic tactic-name))
-        (setq success t)
-        (setq used (1+ used))))
-    (cond ((> used 0)
-           (message "Applied tactic %s%s"
-                    tactic-name
-                    (if (= times0 1) "" (format " %s times" used))))
-          (t (message "Tactic %s failed" tactic-name)))))
+    rused))
 
 ;; sexp-rewrite tactic names have property 'sexprw-tactic
 
@@ -186,9 +183,6 @@ Customizable via the variable `sexpr-auto-definition-tactics'."
   (sexprw-rewrite/ast (desugar-pattern pattern nil 0)
                       (desugar-pattern template t 0)
                       guard))
-
-(defvar sexprw-pattern-history nil)
-(defvar sexprw-template-history nil)
 
 (defun sexprw-show-rewrite (pattern template &optional guard)
   (sexprw-show-rewrite/ast (desugar-pattern pattern nil 0)
@@ -819,7 +813,6 @@ Returns a list of strings and latent spacing symbols ('SP and 'NL)."
           (t
            (goto-char init-point)
            (message "Pattern not found")))))
-
 
 (defun sexprw-move-forward ()
   (let* ((init-point (point))
