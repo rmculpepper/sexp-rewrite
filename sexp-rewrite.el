@@ -83,7 +83,8 @@ for more details.")
 (define-key sexprw-mode-keymap "e" 'sexprw-auto-expression)
 (define-key sexprw-mode-keymap "d" 'sexprw-auto-definition)
 (define-key sexprw-mode-keymap "x" 'sexprw-execute-tactic)
-(define-key sexprw-mode-keymap "s" 'sexprw-squarify)
+(define-key sexprw-mode-keymap "s" 'sexprw-search-pattern)
+(define-key sexprw-mode-keymap "[" 'sexprw-squarify)
 
 (define-key sexprw-mode-keymap (kbd "r e")
   (lambda () (interactive) (sexprw-auto-expression 100)))
@@ -760,7 +761,8 @@ Returns a list of strings and latent spacing symbols ('SP and 'NL)."
     nil))
 
 (defconst sexprw-all-whitespace-re 
-  "\\(\\s-\\|[\n]\\)*")
+  ;; "\\(\\s-\\|[\n]\\)*"  ;; ??? matches close parens too?
+  "[[:space:]\n]*")
 
 (defun sexprw-open-bracket-re (from)
   ;; (concat "[[:space:]]*" (regexp-quote from))
@@ -801,15 +803,23 @@ Returns a list of strings and latent spacing symbols ('SP and 'NL)."
 
 (defun sexprw-search-pattern/ast (pattern)
   (let ((init-point (point))
+        (success nil)
         (continue t))
     (while continue
       (setq continue nil)
       (sexprw-skip-whitespace)
       (let ((result (save-excursion (sexprw-match pattern))))
         (cond (result
-               (message "Pattern matched"))
+               (setq success t))
               (t
-               (setq continue (sexprw-move-forward))))))))
+               (setq continue (sexprw-move-forward))))))
+    (cond (success
+           (push-mark init-point)
+           (message "Pattern found; mark saved where search started"))
+          (t
+           (goto-char init-point)
+           (message "Pattern not found")))))
+
 
 (defun sexprw-move-forward ()
   (let* ((init-point (point))
@@ -817,7 +827,7 @@ Returns a list of strings and latent spacing symbols ('SP and 'NL)."
          (next-sexp-start (and next-sexp-end
                                (ignore-errors (scan-sexps next-sexp-end -1))))
          (next-list-start (ignore-errors (scan-lists init-point 1 -1))))
-    (message "next-sexp-end = %s, next-list-start = %s" next-sexp-end next-list-start)
+    ;; (message "next-sexp-end = %s, next-list-start = %s" next-sexp-end next-list-start)
     (cond ((and next-sexp-start (> next-sexp-start init-point))
            ;; (message "Going to start of next sexp")
            (goto-char next-sexp-start)
@@ -825,7 +835,7 @@ Returns a list of strings and latent spacing symbols ('SP and 'NL)."
           ((not next-sexp-end)
            ;; try going up
            ;; (message "Going up")
-           (progn (up-list 1) (> (point) init-point)))
+           (progn (ignore-errors (up-list 1)) (> (point) init-point)))
           ((or (not next-list-start)
                (> next-list-start next-sexp-end))
            ;; (message "Going forward")
@@ -834,7 +844,7 @@ Returns a list of strings and latent spacing symbols ('SP and 'NL)."
            t)
           (t
            ;; (message "Going down")
-           (progn (down-list 1) (> (point) init-point))))))
+           (progn (ignore-errors (down-list 1)) (> (point) init-point))))))
 
 ;; ============================================================
 
