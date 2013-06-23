@@ -30,7 +30,6 @@ for more details.")
 ;; - documentation, rationale, etc
 ;; - documentation for individual tactics ??
 ;; - code cleanup, namespacing, etc
-;; - add search-pattern-forward command
 ;; - add last-failure variable for debugging
 ;; - support COMMENT var kind
 ;; - better comment handling (custom regexp? may need hook)
@@ -144,6 +143,7 @@ Customizable via the variable `sexpr-auto-definition-tactics'."
          (used 0)
          (success t))
     (while (and (> times 0) success)
+      (setq times (1- times))
       (setq success nil)
       (when (ignore-errors (sexprw-run-tactic tactic-name))
         (setq success t)
@@ -209,14 +209,14 @@ Customizable via the variable `sexpr-auto-definition-tactics'."
           (indent-region start (+ start (length replacement))))))))
 
 (defun sexprw-show-rewrite/ast (pattern template &optional guard)
-  ;; (message "pattern = %S" pattern)
+  (message "pattern = %S" pattern)
   (save-excursion
     (let ((env (sexprw-match pattern)))
-      ;; (message "env = %S" env)
+      (message "env = %S" env)
       (and env
            (sexprw-check-nonlinear-patterns (car env))
            (let ((env* (if guard (funcall guard (car env)) env)))
-             ;; (message "guarded env = %S" env*)
+             (message "guarded env = %S" env*)
              (and env*
                   (let ((preoutput (sexprw-template template (car env*))))
                     ;; (message "preoutput = %S" preoutput)
@@ -789,6 +789,52 @@ Returns a list of strings and latent spacing symbols ('SP and 'NL)."
                 (or (not times) (> times 0)))
       (when times (setq times (1- times)))
       (sexprw-rebracket-once from to-open to-close bracket-name))))
+
+;; ============================================================
+;; Search with patterns
+
+(defun sexprw-search-pattern (pattern)
+  "Search forward for sexp matching PATTERN."
+  (interactive
+   (list (read-from-minibuffer "Search pattern: " nil nil t 'sexpr-rewrite-history)))
+  (sexprw-search-pattern/ast (desugar-pattern pattern nil 0)))
+
+(defun sexprw-search-pattern/ast (pattern)
+  (let ((init-point (point))
+        (continue t))
+    (while continue
+      (setq continue nil)
+      (sexprw-skip-whitespace)
+      (let ((result (save-excursion (sexprw-match pattern))))
+        (cond (result
+               (message "Pattern matched"))
+              (t
+               (setq continue (sexprw-move-forward))))))))
+
+(defun sexprw-move-forward ()
+  (let* ((init-point (point))
+         (next-sexp-end (ignore-errors (scan-sexps init-point 1)))
+         (next-sexp-start (and next-sexp-end
+                               (ignore-errors (scan-sexps next-sexp-end -1))))
+         (next-list-start (ignore-errors (scan-lists init-point 1 -1))))
+    (message "next-sexp-end = %s, next-list-start = %s" next-sexp-end next-list-start)
+    (cond ((and next-sexp-start (> next-sexp-start init-point))
+           ;; (message "Going to start of next sexp")
+           (goto-char next-sexp-start)
+           t)
+          ((not next-sexp-end)
+           ;; try going up
+           ;; (message "Going up")
+           (progn (up-list 1) (> (point) init-point)))
+          ((or (not next-list-start)
+               (> next-list-start next-sexp-end))
+           ;; (message "Going forward")
+           ;; next sexp is not a list
+           (goto-char next-sexp-end)
+           t)
+          (t
+           ;; (message "Going down")
+           (progn (down-list 1) (> (point) init-point))))))
 
 ;; ============================================================
 
