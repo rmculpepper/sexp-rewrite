@@ -41,14 +41,6 @@
                 map for-each ormap andmap foldl)
               sexprw-auto-expression-tactics))
 
-(setq sexprw-auto-conditional-tactics
-      (append '(if-to-cond
-                cond-else-absorb-if
-                cond-else-absorb-cond
-                unsafe-let-if-to-cond
-                unsafe-cond-else-absorb-let-if)
-              sexprw-auto-conditional-tactics))
-
 (define-sexprw-tactic if-to-cond
   (sexprw-rewrite
    '(if %test %then %else)
@@ -205,7 +197,30 @@
     ;; trailing comment
     ))
 
-;; The following are useful in definition context, unsafe in expr context
+(define-sexprw-tactic let-loop-to-definition
+  (sexprw-rewrite
+   '(let $loop (($arg %init) ...) %%body)
+   '(let () !NL
+      (define ($loop $arg ...) !NL
+        %%body)
+      !NL
+      ($loop %init ...))))
+
+;; Would be nice to recognize potential 'for' loops,
+;; but needs a lot more information than we have here.
+
+';; example for let loop
+(let loop ([rejected 0] [racc '()] [lst the-stuff])
+  (cond [(pair? lst)
+         (if (ok? (car lst))
+             (loop count (cons (car lst) racc) (cdr lst))
+             (loop (add1 count) racc (cdr lst)))]
+        [else
+         (values rejected (reverse racc))]))
+
+
+;; Unsafe definition-context tactics. Unsafe because they change
+;; scopes. (Even worse if you apply them in expr context.)
 
 (define-sexprw-tactic splice-letrec
   (sexprw-rewrite
@@ -235,3 +250,6 @@
 ;; TODO: eta
 ;;    expr => (lambda (x ...) (expr x ...))
 ;; Needs input from user.
+
+
+

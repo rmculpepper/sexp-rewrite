@@ -82,9 +82,7 @@ for more details.")
 (global-set-key (kbd "C-c C-d") sexprw-mode-keymap)
 
 (define-key sexprw-mode-keymap "e" 'sexprw-auto-expression)
-
 (define-key sexprw-mode-keymap "d" 'sexprw-auto-definition)
-(define-key sexprw-mode-keymap "c" 'sexprw-auto-conditional)
 (define-key sexprw-mode-keymap "x" 'sexprw-execute-tactic)
 (define-key sexprw-mode-keymap "s" 'sexprw-squarify)
 
@@ -92,15 +90,11 @@ for more details.")
   (lambda () (interactive) (sexprw-auto-expression 100)))
 (define-key sexprw-mode-keymap (kbd "r d")
   (lambda () (interactive) (sexprw-auto-definition 100)))
-(define-key sexprw-mode-keymap (kbd "r c")
-  (lambda () (interactive) (sexprw-auto-conditional 100)))
 
 (defvar sexprw-auto-expression-tactics nil
   "List of tactics tried by `sexprw-auto-expression'.")
 (defvar sexprw-auto-definition-tactics nil
   "List of tactics tried by `sexprw-auto-definition'.")
-(defvar sexprw-auto-conditional-tactics nil
-  "List of tactics tried by `sexprw-auto-conditional'.")
 
 (defun sexprw-auto-expression (&optional times)
   "Run the default sexp-rewrite tactics for expressions.
@@ -112,11 +106,6 @@ Customizable via the variable `sexpr-auto-expression-tactics'."
 Customizable via the variable `sexpr-auto-definition-tactics'."
   (interactive "p")
   (sexprw-run-tactics sexprw-auto-definition-tactics times))
-(defun sexprw-auto-conditional (&optional times)
-  "Run the default sexp-rewrite tactics for conditionals.
-Customizable via the variable `sexpr-auto-conditional-tactics'."
-  (interactive "p")
-  (sexprw-run-tactics sexprw-auto-conditional-tactics times))
 
 (defun sexprw-run-tactics (tactics times0)
   (let ((times times0)
@@ -127,7 +116,7 @@ Customizable via the variable `sexpr-auto-conditional-tactics'."
       (setq success nil)
       (dolist (tactic tactics)
         (unless success
-          (when (ignore-errors (sexprw-execute-tactic tactic) t)
+          (when (ignore-errors (sexprw-run-tactic tactic) t)
             (setq success t)
             (setq rused (cons tactic rused)))))
       (unless success (setq times 0)))
@@ -141,15 +130,31 @@ Customizable via the variable `sexpr-auto-conditional-tactics'."
 (defvar sexprw-execute-rewrite-history nil
   "Interactive history for function `sexpr-execute-tactic'.")
 
-(defun sexprw-execute-tactic (tactic-name)
+(defun sexprw-execute-tactic (tactic-name &optional times0)
   "Read sexprw-rewrite tactic, then try to execute it."
   (interactive
-   (list (completing-read "Sexp-rewrite tactic: "
+   (list (completing-read "Tactic: "
                           obarray
                           'sexprw-tactic-symbolp
                           t
                           nil
-                          'sexprw-execute-rewrite-history)))
+                          'sexprw-execute-rewrite-history)
+         (prefix-numeric-value current-prefix-arg)))
+  (let* ((times times0)
+         (used 0)
+         (success t))
+    (while (and (> times 0) success)
+      (setq success nil)
+      (when (ignore-errors (sexprw-run-tactic tactic-name))
+        (setq success t)
+        (setq used (1+ used))))
+    (cond ((> used 0)
+           (message "Applied tactic %s%s"
+                    tactic-name
+                    (if (= times0 1) "" (format " %s times" used))))
+          (t (message "Tactic %s failed" tactic-name)))))
+
+(defun sexprw-run-tactic (tactic-name)
   (let* ((tactic-name (if (symbolp tactic-name) tactic-name (intern tactic-name)))
          (tactic (sexprw-tactic-value tactic-name)))
     (funcall tactic)))
