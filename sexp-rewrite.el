@@ -107,6 +107,11 @@ Customizable via the variable `sexpr-auto-definition-tactics'."
   (interactive "p")
   (sexprw-run-tactics sexprw-auto-definition-tactics times))
 
+(defun sexprw-run-tactic (tactic-name)
+  (let* ((tactic-name (if (symbolp tactic-name) tactic-name (intern tactic-name)))
+         (tactic (sexprw-tactic-value tactic-name)))
+    (funcall tactic)))
+
 (defun sexprw-run-tactics (tactics times0)
   (let ((times times0)
         success
@@ -127,8 +132,7 @@ Customizable via the variable `sexpr-auto-definition-tactics'."
           (t
            (message "No applicable tactic")))))
   
-(defvar sexprw-execute-rewrite-history nil
-  "Interactive history for function `sexpr-execute-tactic'.")
+(defvar sexprw-tactic-history nil)
 
 (defun sexprw-execute-tactic (tactic-name &optional times0)
   "Read sexprw-rewrite tactic, then try to execute it."
@@ -138,7 +142,7 @@ Customizable via the variable `sexpr-auto-definition-tactics'."
                           'sexprw-tactic-symbolp
                           t
                           nil
-                          'sexprw-execute-rewrite-history)
+                          'sexprw-tactic-history)
          (prefix-numeric-value current-prefix-arg)))
   (let* ((times times0)
          (used 0)
@@ -154,11 +158,6 @@ Customizable via the variable `sexpr-auto-definition-tactics'."
                     tactic-name
                     (if (= times0 1) "" (format " %s times" used))))
           (t (message "Tactic %s failed" tactic-name)))))
-
-(defun sexprw-run-tactic (tactic-name)
-  (let* ((tactic-name (if (symbolp tactic-name) tactic-name (intern tactic-name)))
-         (tactic (sexprw-tactic-value tactic-name)))
-    (funcall tactic)))
 
 ;; sexp-rewrite tactic names have property 'sexprw-tactic
 
@@ -181,14 +180,15 @@ Customizable via the variable `sexpr-auto-definition-tactics'."
 (defun sexprw-rewrite (pattern template &optional guard)
   (interactive
    (list 
-    (read-from-minibuffer "Pattern: " nil nil t 'sexprw-rewrite-history)
-    (read-from-minibuffer "Template: " nil nil t 'sexprw-rewrite-history)))
+    (read-from-minibuffer "Pattern: " nil nil t 'sexprw-pattern-history)
+    (read-from-minibuffer "Template: " nil nil t 'sexprw-template-history)))
   ;; (message "parsed pattern = %S" (desugar-pattern pattern nil 0))
   (sexprw-rewrite/ast (desugar-pattern pattern nil 0)
                       (desugar-pattern template t 0)
                       guard))
 
-(defvar sexprw-rewrite-history nil)
+(defvar sexprw-pattern-history nil)
+(defvar sexprw-template-history nil)
 
 (defun sexprw-show-rewrite (pattern template &optional guard)
   (sexprw-show-rewrite/ast (desugar-pattern pattern nil 0)
@@ -798,7 +798,7 @@ Returns a list of strings and latent spacing symbols ('SP and 'NL)."
 (defun sexprw-search-pattern (pattern)
   "Search forward for sexp matching PATTERN."
   (interactive
-   (list (read-from-minibuffer "Search pattern: " nil nil t 'sexpr-rewrite-history)))
+   (list (read-from-minibuffer "Search pattern: " nil nil t 'sexpr-pattern-history)))
   (sexprw-search-pattern/ast (desugar-pattern pattern nil 0)))
 
 (defun sexprw-search-pattern/ast (pattern)

@@ -67,8 +67,6 @@
    '(cond %%clauses (else (if %test %then %else)))
    '(cond %%clauses !NL (!SQ %test %then) !NL (!SQ else %else))))
 
-;; FIXME: need to check equality for non-linear pattern
-
 (define-sexprw-tactic unsafe-let-if-to-cond
   ;; Unsafe if $name occurs free in %else
   (sexprw-rewrite
@@ -141,6 +139,10 @@
 ;;   => (for/list ([e (in-vector v)]) body)
 ;; or instead, just
 ;;      (in-list (vector->list v)) => (in-vector v)
+;; Perhaps group tactics like (in-list (vector->list _)) together
+;; under tactic name, use recursive processing to apply?
+;; (Don't want to automatically try *all* expr tactics, probably.)
+;; Problem: not recursively processing original text, but generated text.
 
 (define-sexprw-tactic foldl
   (sexprw-rewrite
@@ -154,6 +156,12 @@
        0
        some-things
        (append better-things worse-things))
+
+;; What about for-loop fusion or absorption?
+;; (for/* ([$name (in-list (filter %pred %lst))]) %%body)
+;; => (for/* ([$name (in-list $lst)]
+;;            #:when (%pred $name))    ;; unsafe: puts %pred in scope of $name
+;;      %%body)
 
 ;; ============================================================
 ;; More expression rewrites
@@ -217,7 +225,6 @@
              (loop (add1 count) racc (cdr lst)))]
         [else
          (values rejected (reverse racc))]))
-
 
 ;; Unsafe definition-context tactics. Unsafe because they change
 ;; scopes. (Even worse if you apply them in expr context.)
