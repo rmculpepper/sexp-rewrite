@@ -26,10 +26,11 @@ for more details.")
 ;; TO DO
 
 ;; short term
+;; - code cleanup, namespacing, etc
+;; - make sure sugared pattern lang is complete for core pattern lang
 ;; - automated testing
 ;; - documentation, rationale, etc
 ;; - documentation for individual tactics ??
-;; - code cleanup, namespacing, etc
 ;; - support COMMENT var kind
 ;; - better comment handling (custom regexp? may need hook)
 ;; - improve guard support 

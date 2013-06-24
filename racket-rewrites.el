@@ -7,9 +7,6 @@
 ;; ============================================================
 ;; TO DO
 
-;; case-lambda-sort-clauses
-;; case-lambda-to-lambda-with-optional-arguments
-
 ;; short term
 ;; - build big library of Scheme/Racket tactics
 ;; - build automatic tactics
