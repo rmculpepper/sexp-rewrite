@@ -182,53 +182,45 @@ Customizable via the variable `sexprw-auto-definition-tactics'."
                       (desugar-pattern template t 0)
                       guard))
 
-(defun sexprw-show-rewrite (pattern template &optional guard)
-  (sexprw-show-rewrite/ast (desugar-pattern pattern nil 0)
-                           (desugar-pattern template t 0)
-                           guard))
-
 (defun sexprw-rewrite/ast (pattern template &optional guard)
-  (let ((range (grab-next-sexp/require-pure)))
-    (unless range (error "Not at start of sexp"))
-    (let ((start (nth 1 range))
-          (end (nth 2 range)))
-      (goto-char start)
-      (save-excursion
-        (let* ((replacement (sexprw-show-rewrite/ast pattern template guard))
-               (replacement-length (length replacement)))
-          (and replacement
-               (progn
-                 (delete-and-extract-region start end)
-                 (insert replacement)
-                 (indent-region start (+ start (length replacement)))
-                 t)))))))
-
-(defun sexprw-show-rewrite/ast (pattern template &optional guard)
-  ;; (message "pattern = %S" pattern)
   (save-excursion
-    (let ((env (sexprw-match pattern)))
-      ;; (message "env = %S" env)
-      (and env
-           (sexprw-check-nonlinear-patterns (car env))
-           (let ((env* (if guard (funcall guard (car env)) env)))
-             ;; (message "guarded env = %S" env*)
-             (and (or env*
-                      (sexprw-fail `(guard env= ,env)))
-                  (let ((preoutput
-                         (condition-case error-info
-                             (sexprw-template template (car env*))
-                           (template-error 
-                            (sexprw-fail `(template ,error-info guard-env=
-                                                    ,(car env*)))))))
-                    ;; (message "preoutput = %S" preoutput)
-                    (and preoutput
-                         (let ((output
-                                (condition-case error-info
-                                    (sexprw-output preoutput)
-                                  (template-error
-                                   (sexprw-fail `(output ,error-info))))))
-                           ;; (message "output = %S" output)
-                           output)))))))))
+    (sexprw-skip-whitespace)
+    (let* ((init-point (point))
+           ;; puts point after pattern match
+           (replacement (sexprw-compute-rewrite/ast pattern template guard)))
+      (and replacement
+           (progn
+             (delete-and-extract-region init-point (point))
+             (insert replacement)
+             (indent-region init-point (+ init-point (length replacement)))
+             t)))))
+
+(defun sexprw-compute-rewrite/ast (pattern template &optional guard)
+  ;; (message "pattern = %S" pattern)
+  (let ((env (sexprw-match pattern)))
+    (message "point = %S" (point))
+    ;; (message "env = %S" env)
+    (and env
+         (sexprw-check-nonlinear-patterns (car env))
+         (let ((env* (if guard (funcall guard (car env)) env)))
+           ;; (message "guarded env = %S" env*)
+           (and (or env*
+                    (sexprw-fail `(guard env= ,env)))
+                (let ((preoutput
+                       (condition-case error-info
+                           (sexprw-template template (car env*))
+                         (template-error 
+                          (sexprw-fail `(template ,error-info guard-env=
+                                                  ,(car env*)))))))
+                  ;; (message "preoutput = %S" preoutput)
+                  (and preoutput
+                       (let ((output
+                              (condition-case error-info
+                                  (sexprw-output preoutput)
+                                (template-error
+                                 (sexprw-fail `(output ,error-info))))))
+                         ;; (message "output = %S" output)
+                         output))))))))
 
 ;; FIXME: here's another quadratic function...
 (defun sexprw-check-nonlinear-patterns (env0)
