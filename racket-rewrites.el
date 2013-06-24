@@ -35,7 +35,7 @@
 ;;; Most of the tactics below have strings following the definition
 ;;; that let you see the effect of the tactic.
 
-;;; Once you've tried the tactic, press "C-x u" to undo the change and
+;;; Once you've tried the tactic, press "C-/" to undo the change and
 ;;; restore the example.
 
 ;;; ============================================================
