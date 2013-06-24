@@ -96,12 +96,12 @@ for more details.")
 
 (defun sexprw-auto-expression (&optional times)
   "Run the default sexp-rewrite tactics for expressions.
-Customizable via the variable `sexpr-auto-expression-tactics'."
+Customizable via the variable `sexprw-auto-expression-tactics'."
   (interactive "p")
   (sexprw-execute-tactics sexprw-auto-expression-tactics times))
 (defun sexprw-auto-definition (&optional times)
   "Run the default sexp-rewrite tactics for definitions.
-Customizable via the variable `sexpr-auto-definition-tactics'."
+Customizable via the variable `sexprw-auto-definition-tactics'."
   (interactive "p")
   (sexprw-execute-tactics sexprw-auto-definition-tactics times))
 
@@ -896,7 +896,7 @@ Returns a list of strings and latent spacing symbols ('SP and 'NL)."
   "Search forward for sexp matching PATTERN."
   (interactive
    (list (read-from-minibuffer "Search pattern: " nil nil t
-                               'sexpr-pattern-history)))
+                               'sexprw-pattern-history)))
   (sexprw-search-pattern/ast (desugar-pattern pattern nil 0)))
 
 (defun sexprw-search-pattern/ast (pattern)
