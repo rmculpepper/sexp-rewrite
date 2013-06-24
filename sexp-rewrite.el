@@ -30,10 +30,8 @@ for more details.")
 ;; - documentation, rationale, etc
 ;; - documentation for individual tactics ??
 ;; - code cleanup, namespacing, etc
-;; - add last-failure variable for debugging
 ;; - support COMMENT var kind
 ;; - better comment handling (custom regexp? may need hook)
-;; - debug option (conditionalize messages)
 ;; - improve guard support 
 ;;   - require guard extends env?
 ;;   - add ranges back to block matches
@@ -57,8 +55,6 @@ for more details.")
 ;;     SP vs NL as latent... but that would move interp. of adjacent 
 ;;     spacing directives into PreOutput pass rather than output pass.
 ;; - custom var to disable square brackets (use parens instead)
-;; - check template funs, convert errors to nil (eg, ellipsis count
-;;   mismatch) or at least wrap in ignore-errors, set last-failure var
 ;; - build "tactic apropos"---search by literals in tactic pattern & template
 
 ;; long term
@@ -122,6 +118,7 @@ Customizable via the variable `sexpr-auto-definition-tactics'."
   (sexprw-execute-tactics (list tactic-name) times0))
 
 (defun sexprw-execute-tactics (tactic-names times0)
+  (setq sexprw-failure-info nil)
   (let ((rused (sexprw-run-tactics-until-success tactic-names times0)))
     (cond ((consp rused)
            (cond ((= (length rused) 1)
@@ -136,7 +133,8 @@ Customizable via the variable `sexpr-auto-definition-tactics'."
 
 (defun sexprw-run-tactic (tactic-name)
   (let* ((tactic (sexprw-tactic-value tactic-name)))
-    (and (funcall tactic)
+    (and (let ((sexprw-current-tactic tactic-name)) ;; fluid-let
+           (funcall tactic))
          (list tactic-name))))
 
 (defun sexprw-run-tactics-until-success (tactics &optional times0)
@@ -148,7 +146,7 @@ Customizable via the variable `sexpr-auto-definition-tactics'."
       (setq success nil)
       (dolist (tactic tactics)
         (unless success
-          (when (and 'ignore-errors (sexprw-run-tactic tactic) t)
+          (when (sexprw-run-tactic tactic)
             (setq success t)
             (setq rused (cons tactic rused)))))
       (unless success (setq times 0)))
@@ -212,16 +210,27 @@ Customizable via the variable `sexpr-auto-definition-tactics'."
            (sexprw-check-nonlinear-patterns (car env))
            (let ((env* (if guard (funcall guard (car env)) env)))
              ;; (message "guarded env = %S" env*)
-             (and env*
-                  (let ((preoutput (sexprw-template template (car env*))))
+             (and (or env*
+                      (sexprw-fail `(guard env= ,env)))
+                  (let ((preoutput
+                         (condition-case error-info
+                             (sexprw-template template (car env*))
+                           (template-error 
+                            (sexprw-fail `(template ,error-info guard-env= ,(car env*)))))))
                     ;; (message "preoutput = %S" preoutput)
-                    (let ((output (sexprw-output preoutput)))
-                      ;; (message "output = %S" output)
-                      output))))))))
+                    (and preoutput
+                         (let ((output
+                                (condition-case error-info
+                                    (sexprw-output preoutput)
+                                  (template-error
+                                   (sexprw-fail `(output ,error-info))))))
+                           ;; (message "output = %S" output)
+                           output)))))))))
 
 ;; FIXME: here's another quadratic function...
-(defun sexprw-check-nonlinear-patterns (env)
-  (let ((ok t))
+(defun sexprw-check-nonlinear-patterns (env0)
+  (let ((ok t)
+        (env env0))
     (while (and env ok)
       (let* ((entry1 (car env))
              (key1 (car entry1))
@@ -230,9 +239,33 @@ Customizable via the variable `sexpr-auto-definition-tactics'."
         (let ((entry2 (assq key1 rest-env)))
           (when entry2
             (unless (equal entry1 entry2)
-              (message "Nonlinear pattern variable '%s' matched different values" key1)
+              (sexprw-fail `(nonlinear-pvar ,key1 env= ,env0))
               (setq ok nil))))))
     ok))
+
+;; ============================================================
+;; Debugging and diagnostics
+
+(defvar sexprw-current-tactic nil
+  "Name of currently executing tactic.")
+
+(defvar sexprw-failure-info nil
+  "Information about last tactic failure(s).")
+
+(defun sexprw-fail (info)
+  (push (cons sexprw-current-tactic (cons (point) info)) sexprw-failure-info)
+  nil)
+
+(defun sexprw-show-failure-info ()
+  (interactive)
+  (message "%S" sexprw-failure-info))
+
+(put 'sexprw-template-error
+     'error-conditions
+     '(error sexprw-template-error))
+(put 'sexprw-template-error
+     'error-message
+     "Error instantiating template")
 
 ;; ============================================================
 ;; Pretty patterns and templates
@@ -375,10 +408,13 @@ Advances point to end of matched term(s)."
         ((eq (car pattern) 'quote)
          ;; Note: grabs pure-sexp, checks contains symbol
          (let ((next (grab-next-sexp/require-pure)))
-           (and next
+           (and (or next
+                    (sexprw-fail `(match quote pure-sexp)))
                 (let ((pure-text (car next)))
-                  (and (string-match sexprw-pure-atom-re pure-text)
-                       (equal pure-text (symbol-name (cadr pattern)))
+                  (and (or (string-match sexprw-pure-atom-re pure-text)
+                           (sexprw-fail `(match quote is-symbol)))
+                       (or (equal pure-text (symbol-name (cadr pattern)))
+                           (sexprw-fail `(match quote equal ,(symbol-name (cadr pattern)))))
                        (list nil))))))
         ((eq (car pattern) 'VAR)
          (sexprw-match-var (nth 1 pattern) (nth 2 pattern) (nthcdr 3 pattern)))
@@ -394,13 +430,16 @@ Advances point to end of matched term(s)."
   (cond ((eq kind 'SYM)
          ;; Note: grabs pure-sexp, checks contains symbol
          (let ((next (grab-next-sexp/require-pure)))
-           (and next
+           (and (or next
+                    (sexprw-fail `(match var sym grab)))
                 (let ((pure-text (car next)))
-                  (and (string-match sexprw-pure-atom-re pure-text)
+                  (and (or (string-match sexprw-pure-atom-re pure-text)
+                           (sexprw-fail `(match var sym equal)))
                        (list (list (cons pvar (list 'atom pure-text)))))))))
         ((eq kind 'PURE-SEXP)
          (let ((next (grab-next-sexp/require-pure)))
-           (and next
+           (and (or next
+                    (sexprw-fail `(match var pure-sexp grab)))
                 (let ((pure-text (car next)))
                   (list
                    (list (cons pvar
@@ -409,7 +448,8 @@ Advances point to end of matched term(s)."
                                         (line-number-at-pos (nth 2 next)))))))))))
         ((eq kind 'SEXP)
          (let ((next (grab-next-impure-sexp)))
-           (and next
+           (and (or next
+                    (sexprw-fail `(match var sexp grab)))
                 (let ((impure-text (car next)))
                   (list
                    (list (cons pvar
@@ -419,7 +459,8 @@ Advances point to end of matched term(s)."
         ((eq kind 'REST)
          (sexprw-skip-whitespace)
          (let ((init-point (point)))
-           (and (skip-forward-to-n-sexps-before-end (car args))
+           (and (or (skip-forward-to-n-sexps-before-end (car args))
+                    (sexprw-fail `(match var rest skip ,(car args))))
                 (list
                  (list (cons pvar
                              (list 'block
@@ -445,7 +486,8 @@ Advances point to end of matched term(s)."
 
 (defun sexprw-match-list (inners)
   (let ((next (grab-next-sexp/require-pure)))
-    (and next
+    (and (or next
+             (sexprw-fail `(match-list grab)))
          (member (substring (car next) 0 1) '("(" "[" "{"))
          ;; narrow to just after start, just before end
          (let ((result
@@ -464,7 +506,9 @@ Advances point to end of matched term(s)."
         (let ((inner-result (sexprw-match inner)))
           (setq accum (and inner-result
                            (list (append (car inner-result) (car accum))))))))
-    (and (looking-at (concat sexprw-all-whitespace-re "\\'"))
+    (and accum
+         (or (looking-at (concat sexprw-all-whitespace-re "\\'"))
+             (sexprw-fail `(match-list end check-whitespace)))
          accum)))
 
 (defun sexprw-match-rep (inner upto)
@@ -616,7 +660,9 @@ On success, return (list ENV), so suitable as the body of a guard function."
                 (t
                  (error "Non-atom value for pvar '%s': %S" pvar item)
                  (setq failed t))))))
-    (and (not failed) (list env))))
+    (and (or (not failed)
+             (sexprw-fail `(guard all-distinct ,pvars)))
+         (list env))))
 
 (defun sexprw-guard-no-dot (env &rest pvars)
   "Check that none of the atoms bound to the PVARS is a dot.
@@ -635,7 +681,9 @@ On failure, return nil; on success, return (list ENV), so suitable as guard body
                  (setq worklist (append (cdr item) worklist)))
                 (t
                  (error "Non-atom value for pvar '%s': %S" pvar item))))))
-    (and (not failed) (list env))))
+    (and (or (not failed)
+             (sexprw-fail `(guard no-dot)))
+         (list env))))
 
 
 ;; ============================================================
@@ -662,7 +710,7 @@ Returns a list of strings and latent spacing symbols ('SP and 'NL)."
   (cond ((stringp template)
          template)
         ((not (and (listp template) (consp template)))
-         (error "Bad template: %s" template))
+         (error "Bad template: %S" template))
         ((eq (car template) 'quote)
          (list (symbol-name (cadr template))
                'SP))
@@ -717,7 +765,7 @@ Returns a list of strings and latent spacing symbols ('SP and 'NL)."
            (length1 (car lengths)))
       (dolist (l lengths)
         (unless (= l length1)
-          (error "Ellipsis count mismatch")))
+          (signal 'template-error 'ellipsis-count-mismatch)))
       (let ((raccum '()))
         (dotimes (_i length1)
           (let* ((extenv+vals (split/extend-env vars vals env))
