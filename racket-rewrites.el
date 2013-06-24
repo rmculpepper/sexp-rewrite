@@ -306,12 +306,7 @@
    (lambda (env)
      ;; check no $var is a dot (means rest args)
      ;; sort vars and bodies together by length of vars list
-     (cond ((let (found-dot)
-              (dolist (vars-entry (cdr (sexprw-env-ref env '$var)))
-                (dolist (var (cdr vars-entry))
-                  (when (equal var '(atom "."))
-                    (setq found-dot t))))
-              found-dot)
+     (cond ((not (sexprw-guard-no-dot env '$var))
             nil)
            ;; If already sorted, tactic does not apply (else gets stuck repeating this)
            ((let ((var-entries (cdr (sexprw-env-ref env '$var)))

@@ -518,11 +518,6 @@ Advances point to end of matched term(s)."
          onto)
         (t (error "Bad pattern: %S" pattern))))
 
-(defun sexprw-env-ref (env key)
-  ;; All valid env values are non-nil, so no info loss.
-  (let ((result (assq key env)))
-    (and result (cdr result))))
-
 ;; ----
 
 (defun grab-next-impure-sexp ()
@@ -593,6 +588,57 @@ Does not change point."
 
 (defun sexprw-skip-whitespace ()
   (skip-chars-forward "[:space:]\n"))
+
+;; ============================================================
+;; Guard utilities
+
+(defun sexprw-env-ref (env key)
+  "Fetch the value associated with KEY in ENV, or nil otherwise."
+  (let ((result (assq key env)))
+    (and result (cdr result))))
+
+(defun sexprw-guard-all-distinct (env &rest pvars)
+  "Check that all of the atoms bound to the PVARS are distinct.
+If there is a duplicate, or if any PVAR has a non-atom binding, return nil.
+On success, return (list ENV), so suitable as the body of a guard function."
+  (let ((seen (make-hash-table :test 'equal))
+        (worklist nil)
+        (failed nil))
+    (dolist (pvar pvars)
+      (setq worklist (list (sexprw-env-ref env pvar)))
+      (while (and worklist (not failed))
+        (let ((item (car worklist)))
+          (setq worklist (cdr worklist))
+          (cond ((eq (car item) 'atom)
+                 (when (gethash (cadr item) seen nil)
+                   (setq failed t))
+                 (puthash (cadr item) seen t))
+                ((eq (car item) 'rep)
+                 (setq worklist (append (cdr item) worklist)))
+                (t
+                 (error "Non-atom value for pvar '%s': %S" pvar item)
+                 (setq failed t))))))
+    (and (not failed) (list env))))
+
+(defun sexprw-guard-no-dot (env &rest pvars)
+  "Check that none of the atoms bound to the PVARS is a dot.
+On failure, return nil; on success, return (list ENV), so suitable as guard body."
+  (let ((worklist nil)
+        (failed nil))
+    (dolist (pvar pvars)
+      (setq worklist (list (sexprw-env-ref env pvar)))
+      (while (and worklist (not failed))
+        (let ((item (car worklist)))
+          (setq worklist (cdr worklist))
+          (cond ((eq (car item) 'atom)
+                 (when (equal (cadr item) ".")
+                   (setq failed t)))
+                ((eq (car item) 'rep)
+                 (setq worklist (append (cdr item) worklist)))
+                (t
+                 (error "Non-atom value for pvar '%s': %S" pvar item))))))
+    (and (not failed) (list env))))
+
 
 ;; ============================================================
 ;; Templates
