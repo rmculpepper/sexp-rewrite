@@ -313,7 +313,7 @@ Customizable via the variable `sexpr-auto-definition-tactics'."
                     (t (error "Patterns of unknown size follow %S" pretty)))
                   `(VAR ,pretty ,@(if template '() `(REST ,upto))))
                  (t `(quote ,pretty)))))
-        ((not (and (listp pretty) (consp pretty)))
+        ((not (consp pretty))
          (error "Bad %s: %s" (if template "template" "pattern") pretty))
         ((eq (car pretty) '!SPLICE)
          (cons 'SPLICE (desugar-pattern-list (cdr pretty) template upto)))
@@ -345,8 +345,8 @@ Customizable via the variable `sexpr-auto-definition-tactics'."
       (let ((p1 (car rpretty)))
         (setq rpretty (cdr rpretty))
         (cond ((eq p1 '...)
-               (cond (dots (error "Repeated ellipses in pattern: %S" pretty))
-                     (t (setq dots t))))
+               (when dots (error "Repeated ellipses in pattern: %S" pretty))
+               (setq dots t))
               (t
                (let ((pp1 (desugar-pattern p1 template upto)))
                  (when dots
@@ -408,7 +408,7 @@ Customizable via the variable `sexpr-auto-definition-tactics'."
 fragments, or nil on failure.  Advances point to end of matched
 term(s)."
   ;; (message "matching (%S): %S" (point) pattern)
-  (cond ((or (not (listp pattern)) (null pattern))
+  (cond ((not (consp pattern))
          (error "Bad pattern: %s" pattern))
         ((eq (car pattern) 'quote)
          ;; Note: grabs pure-sexp, checks contains symbol
@@ -716,7 +716,7 @@ Returns a list of strings and latent spacing symbols ('SP and 'NL)."
   ;; (message "** template = %S" template)
   (cond ((stringp template)
          template)
-        ((not (and (listp template) (consp template)))
+        ((not (consp template))
          (error "Bad template: %S" template))
         ((eq (car template) 'quote)
          (list (symbol-name (cadr template))
@@ -855,10 +855,9 @@ Returns a list of strings and latent spacing symbols ('SP and 'NL)."
 (defun sexprw-squarify (&optional times)
   "Turn round parens into square brackets."
   (interactive "P")
-  (let ((times
-         (cond ((numberp times) times)
-               ((consp times) (car times))
-               ((null times) nil))))
+  (let ((times (cond ((numberp times) times)
+                     ((consp times) (car times))
+                     ((null times) nil))))
     (save-excursion
       (sexprw-rebracket-repeat times "(" "[" "]" "parenthesis"))
     nil))
