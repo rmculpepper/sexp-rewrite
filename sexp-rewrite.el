@@ -326,14 +326,14 @@ Customizable via the variable `sexpr-auto-definition-tactics'."
                (desugar-pattern (nth 1 pretty) template upto)
                (cond (template
                       (nth 2 pretty))
-                     (t ; pattern
-                      (cond ((consp (nthcdr 2 pretty))
-                             (nth 2 pretty))
-                            (t
-                             (unless upto
-                               (error "Patterns of unknown size follow !REP pattern: %S"
-                                      pretty))
-                             upto))))))
+                     ;; pattern
+                     ((consp (nthcdr 2 pretty))
+                      (nth 2 pretty))
+                     (t
+                      (unless upto
+                        (error "Patterns of unknown size follow !REP pattern: %S"
+                               pretty))
+                      upto))))
         (t ; list
          (cons 'LIST (desugar-pattern-list pretty template 0)))))
 
@@ -447,22 +447,20 @@ term(s)."
          (let ((next (grab-next-sexp/require-pure)))
            (and (or next
                     (sexprw-fail `(match var pure-sexp grab)))
-                (let ((pure-text (car next)))
-                  (list
-                   (list (cons pvar
-                               (list 'block pure-text
-                                     (= (line-number-at-pos (nth 1 next))
-                                        (line-number-at-pos (nth 2 next)))))))))))
+                (let ((pure-text (car next))
+                      (same-line (= (line-number-at-pos (nth 1 next))
+                                    (line-number-at-pos (nth 2 next)))))
+                  (list (list (cons pvar (list 'block pure-text
+                                               same-line))))))))
         ((eq kind 'SEXP)
          (let ((next (grab-next-impure-sexp)))
            (and (or next
                     (sexprw-fail `(match var sexp grab)))
-                (let ((impure-text (car next)))
-                  (list
-                   (list (cons pvar
-                               (list 'block impure-text
-                                     (= (line-number-at-pos (nth 1 next))
-                                        (line-number-at-pos (nth 2 next)))))))))))
+                (let ((impure-text (car next))
+                      (same-line   (= (line-number-at-pos (nth 1 next))
+                                      (line-number-at-pos (nth 2 next)))))
+                  (list (list (cons pvar (list 'block impure-text
+                                               same-line))))))))
         ((eq kind 'REST)
          (sexprw-skip-whitespace)
          (let ((init-point (point)))

@@ -337,11 +337,9 @@
               (dolist (clause clauses)
                 (setq var-entries (cons (car clause) var-entries))
                 (setq bodies (cons (cdr clause) bodies)))
-              (list
-               (append
-                (list (cons '$sorted-var (cons 'rep var-entries))
-                      (cons '%%sorted-body (cons 'rep bodies)))
-                env))))))))
+              (list `(($sorted-var rep ,@var-entries)
+                      (%%sorted-body rep ,@bodies)
+                      ,@env))))))))
 
 (define-sexprw-tactic define-case-lambda-to-optionals
   (sexprw-rewrite
@@ -367,7 +365,7 @@
            (setq failed t)))
        ;; each arglist is one shorter than next ($arg names don't have
        ;; to match)
-       (let ((all-arg-entries (append $args-entries (list $fargs-entry))))
+       (let ((all-arg-entries `(,@$args-entries ,$fargs-entry)))
          ;; 1- for 'rep header
          (setq required-arg-count (1- (length (car all-arg-entries))))
          (while (and (consp all-arg-entries) (consp (cdr all-arg-entries)))
@@ -387,11 +385,9 @@
            (setq farg-entries (cdr farg-entries)))
          (if failed
              nil
-             (list (append (list (cons '$required-arg
-                                       (cons 'rep (reverse r-required-args)))
-                                 (cons '$optional-arg
-                                       (cons 'rep farg-entries)))
-                           env))))))))
+             (list `(($required-arg rep ,@(reverse r-required-args))
+                     ($optional-arg rep ,@farg-entries)
+                     ,@env))))))))
 
 ' ; example for define-case-lambda-sort-clauses and
   ; define-case-lambda-to-optionals
@@ -424,9 +420,8 @@
   ;; FIXME: should make %default PURE-SEXP for slightly safer comparison
   (cond ((equal (cadr (sexprw-env-ref env '%default))
                 (cadr (sexprw-env-ref env '$rest)))
-         (list (append
-                (list (cons '%default '(block "'()" nil))) ; FIXME: block?
-                env)))
+         (list `((%default . (block "'()" nil)) ; FIXME: block?
+                 ,@env)))
         (t (list env))))
 
 ' ; example for define-rest-to-optionals (from SXML)
