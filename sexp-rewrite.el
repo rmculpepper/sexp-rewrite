@@ -751,7 +751,8 @@ Returns a list of strings and latent spacing symbols ('SP and 'NL)."
                    ;; Take *all* depth>0 pvars in env that occur in template
                    ;; (beware duplicate keys in alist)
                    (let* ((env-keys (sexprw-pattern-variables template '()))
-                          (env-keys (remove-duplicates env-keys))
+                          ;; FIXME: Ack! quadratic, mutates, etc
+                          (env-keys (delete-dups env-keys))
                           (raccum '()))
                      (dolist (key env-keys)
                        (when (eq (car (cdr (assq key env))) 'rep)
@@ -782,12 +783,6 @@ Returns a list of strings and latent spacing symbols ('SP and 'NL)."
                   (cons (sexprw-template inner extenv)
                         raccum))))
         (reverse raccum)))))
-
-;; FIXME: Ack! quadratic, delete mutates, etc
-(defun remove-duplicates (lst)
-  (cond ((consp lst)
-         (cons (car lst) (remove-duplicates (delete (car lst) (cdr lst)))))
-        (t nil)))
 
 (defun split/extend-env (vars vals env)
   (let* ((val1s (mapcar #'car vals))
