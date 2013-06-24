@@ -1,8 +1,8 @@
-;; sexp-rewrite.el --- pattern-based rewriting of sexp-structured code
+;;; sexp-rewrite.el --- pattern-based rewriting of sexp-structured code
 
-;; Copyright 2013 Ryan Culpepper.
-;; Released under the terms of the GPL version 3 or later;
-;; see the text after `sexprw-legal-notice' for details.
+;;; Copyright 2013 Ryan Culpepper.
+;;; Released under the terms of the GPL version 3 or later;
+;;; see the text after `sexprw-legal-notice' for details.
 
 (defconst sexprw-copyright    "Copyright 2013 Ryan Culpepper")
 (defconst sexprw-version      "0.01")
@@ -130,11 +130,12 @@ Customizable via the variable `sexpr-auto-definition-tactics'."
                   (message "Tactic %s not applicable" (car tactic-names)))
                  (t (message "No applicable tactic")))))))
 
-;; sexprw-run-tactic* functions return list of successful tactics in reverse order
+;; sexprw-run-tactic* functions return list of successful tactics in
+;; reverse order
 
 (defun sexprw-run-tactic (tactic-name)
   (let* ((tactic (sexprw-tactic-value tactic-name)))
-    (and (let ((sexprw-current-tactic tactic-name)) ;; fluid-let
+    (and (let ((sexprw-current-tactic tactic-name)) ; fluid-let
            (funcall tactic))
          (list tactic-name))))
 
@@ -217,7 +218,8 @@ Customizable via the variable `sexpr-auto-definition-tactics'."
                          (condition-case error-info
                              (sexprw-template template (car env*))
                            (template-error 
-                            (sexprw-fail `(template ,error-info guard-env= ,(car env*)))))))
+                            (sexprw-fail `(template ,error-info guard-env=
+                                                    ,(car env*)))))))
                     ;; (message "preoutput = %S" preoutput)
                     (and preoutput
                          (let ((output
@@ -272,20 +274,20 @@ Customizable via the variable `sexpr-auto-definition-tactics'."
 ;; Pretty patterns and templates
 
 ;; PP ::= symbol         ~ (quote symbol)
-;;      | $name          ~ (VAR $name SYM)     ;; sigil is part of pvar name
+;;      | $name          ~ (VAR $name SYM)     ; sigil is part of pvar name
 ;;      | %name          ~ (VAR %name SEXP)
-;;      | %%name         ~ (VAR %%name REST n) ;; n is # patterns that follow
+;;      | %%name         ~ (VAR %%name REST n) ; n is # patterns that follow
 ;;      | (PP*)          ~ (LIST P*)
 ;;      | (!SPLICE P*)   ~ (SPLICE P*)
 ;;      | (!REP PP)      ~ (REP P 0)
-;;      | PP ...         ~ (REP P n)           ;; n is # patterns that follow
+;;      | PP ...         ~ (REP P n)           ; n is # patterns that follow
 
 ;; PT ::= like PP, with following additions and replacements:
 ;;      | (!SQ PT*)      ~ (SQLIST T*)
 ;;      | !NL            ~ (NL)
 ;;      | !SP            ~ (SP)
 ;;      | (!REP PT vars) ~ (REP T vars)
-;;      | PT ...         ~ (REP T nil)         ;; vars=nil means "auto"
+;;      | PT ...         ~ (REP T nil)         ; vars=nil means "auto"
 
 (defun desugar-pattern (pretty template upto)
   (cond ((null pretty)
@@ -311,27 +313,28 @@ Customizable via the variable `sexpr-auto-definition-tactics'."
                     (t (error "Patterns of unknown size follow %S" pretty)))
                   `(VAR ,pretty ,@(if template '() `(REST ,upto))))
                  (t `(quote ,pretty)))))
-        ((not (and (listp pretty) (consp pretty)))
+        ((not (consp pretty))
          (error "Bad %s: %s" (if template "template" "pattern") pretty))
         ((eq (car pretty) '!SPLICE)
          (cons 'SPLICE (desugar-pattern-list (cdr pretty) template upto)))
         ((eq (car pretty) '!SQ)
-         (cond (template
-                (cons 'SQLIST (desugar-pattern-list (cdr pretty) template upto)))
-               (t (error "Bad pattern (!SQ not allowed): %S" pretty))))
+         (if template
+             (cons 'SQLIST (desugar-pattern-list (cdr pretty) template upto))
+             (error "Bad pattern (!SQ not allowed): %S" pretty)))
         ((eq (car pretty) '!REP)
          (list 'REP
                (desugar-pattern (nth 1 pretty) template upto)
                (cond (template
                       (nth 2 pretty))
-                     (t ;; pattern
-                      (cond ((consp (nthcdr 2 pretty))
-                             (nth 2 pretty))
-                            (t
-                             (unless upto
-                               (error "Patterns of unknown size follow !REP pattern: %S" pretty))
-                             upto))))))
-        (t ;; list
+                     ;; pattern
+                     ((consp (nthcdr 2 pretty))
+                      (nth 2 pretty))
+                     (t
+                      (unless upto
+                        (error "Patterns of unknown size follow !REP pattern: %S"
+                               pretty))
+                      upto))))
+        (t ; list
          (cons 'LIST (desugar-pattern-list pretty template 0)))))
 
 (defun desugar-pattern-list (pretty template upto)
@@ -342,8 +345,8 @@ Customizable via the variable `sexpr-auto-definition-tactics'."
       (let ((p1 (car rpretty)))
         (setq rpretty (cdr rpretty))
         (cond ((eq p1 '...)
-               (cond (dots (error "Repeated ellipses in pattern: %S" pretty))
-                     (t (setq dots t))))
+               (when dots (error "Repeated ellipses in pattern: %S" pretty))
+               (setq dots t))
               (t
                (let ((pp1 (desugar-pattern p1 template upto)))
                  (when dots
@@ -358,7 +361,7 @@ Customizable via the variable `sexpr-auto-definition-tactics'."
   (cond ((and (eq (car p) 'VAR)
               (eq (nth 2 p) 'REST))
          0)
-        ((memq (car p) '(quote VAR LIST))  ;; note: not (VAR _ REST _)
+        ((memq (car p) '(quote VAR LIST))  ; note: not (VAR _ REST _)
          1)
         ((eq (car p) 'SPLICE)
          (apply #'+ (mapcar #'sexprw-pattern-min-size (cdr p))))
@@ -373,16 +376,16 @@ Customizable via the variable `sexpr-auto-definition-tactics'."
 ;;     | (VAR symbol VariableKind)
 ;;     | (REP P n)
 ;;
-;; VariableKind ::= SYM       ;; symbol
-;;                | PURE-SEXP ;; next sexp, require no preceding comments
-;;                | SEXP      ;; next sexp and preceding comments
-;;                | REST n    ;; rest of enclosing sexp, stopping 'n' sexps before end
-;;                            ;; if 0, gets trailing comments too
+;; VariableKind ::= SYM       ; symbol
+;;                | PURE-SEXP ; next sexp, require no preceding comments
+;;                | SEXP      ; next sexp and preceding comments
+;;                | REST n    ; rest of enclosing sexp, stopping 'n' sexps
+;;                            ; before end; if 0, gets trailing comments too
 ;;
 ;; Matching builds an alist mapping pvar symbols to EnvValue
-;; EnvValue ::= (list 'atom string)              ;; representing symbol
-;;            | (list 'block string one-line?)   ;; representing SEXP, REST
-;;            | (list 'rep EnvValue)             ;; representing depth>0 list
+;; EnvValue ::= (list 'atom string)              ; representing symbol
+;;            | (list 'block string one-line?)   ; representing SEXP, REST
+;;            | (list 'rep EnvValue)             ; representing depth>0 list
 ;;
 ;; (REP P n), like (VAR name REST n), stops 'n' sexps before end
 
@@ -400,11 +403,12 @@ Customizable via the variable `sexpr-auto-definition-tactics'."
   "^[-~!@$^&*_+=:./<>?a-zA-Z#0-9]+$")
 
 (defun sexprw-match (pattern)
-  "Matches the sexp starting at point against PATTERN, returning an (list alist) mapping 
-the pattern variables of PATTERN to fragments, or nil on failure.
-Advances point to end of matched term(s)."
+  "Matches the sexp starting at point against PATTERN, returning an
+\(list alist) mapping the pattern variables of PATTERN to
+fragments, or nil on failure.  Advances point to end of matched
+term(s)."
   ;; (message "matching (%S): %S" (point) pattern)
-  (cond ((or (not (listp pattern)) (null pattern))
+  (cond ((not (consp pattern))
          (error "Bad pattern: %s" pattern))
         ((eq (car pattern) 'quote)
          ;; Note: grabs pure-sexp, checks contains symbol
@@ -415,7 +419,9 @@ Advances point to end of matched term(s)."
                   (and (or (string-match sexprw-pure-atom-re pure-text)
                            (sexprw-fail `(match quote is-symbol)))
                        (or (equal pure-text (symbol-name (cadr pattern)))
-                           (sexprw-fail `(match quote equal ,(symbol-name (cadr pattern)))))
+                           (sexprw-fail
+                            `(match quote equal
+                                    ,(symbol-name (cadr pattern)))))
                        (list nil))))))
         ((eq (car pattern) 'VAR)
          (sexprw-match-var (nth 1 pattern) (nth 2 pattern) (nthcdr 3 pattern)))
@@ -441,22 +447,20 @@ Advances point to end of matched term(s)."
          (let ((next (grab-next-sexp/require-pure)))
            (and (or next
                     (sexprw-fail `(match var pure-sexp grab)))
-                (let ((pure-text (car next)))
-                  (list
-                   (list (cons pvar
-                               (list 'block pure-text
-                                     (= (line-number-at-pos (nth 1 next))
-                                        (line-number-at-pos (nth 2 next)))))))))))
+                (let ((pure-text (car next))
+                      (same-line (= (line-number-at-pos (nth 1 next))
+                                    (line-number-at-pos (nth 2 next)))))
+                  (list (list (cons pvar (list 'block pure-text
+                                               same-line))))))))
         ((eq kind 'SEXP)
          (let ((next (grab-next-impure-sexp)))
            (and (or next
                     (sexprw-fail `(match var sexp grab)))
-                (let ((impure-text (car next)))
-                  (list
-                   (list (cons pvar
-                               (list 'block impure-text
-                                     (= (line-number-at-pos (nth 1 next))
-                                        (line-number-at-pos (nth 2 next)))))))))))
+                (let ((impure-text (car next))
+                      (same-line   (= (line-number-at-pos (nth 1 next))
+                                      (line-number-at-pos (nth 2 next)))))
+                  (list (list (cons pvar (list 'block impure-text
+                                               same-line))))))))
         ((eq kind 'REST)
          (sexprw-skip-whitespace)
          (let ((init-point (point)))
@@ -465,7 +469,7 @@ Advances point to end of matched term(s)."
                 (list
                  (list (cons pvar
                              (list 'block
-                                   (filter-buffer-substring init-point (point) nil t)
+                                   (filter-buffer-substring init-point (point))
                                    (line-number-at-pos init-point)
                                    (line-number-at-pos (point)))))))))
         (t (error "Bad pattern variable kind for pvar '%s': %s" pvar kind))))
@@ -492,16 +496,17 @@ Advances point to end of matched term(s)."
          (member (substring (car next) 0 1) '("(" "[" "{"))
          ;; narrow to just after start, just before end
          (let ((result
-                (save-excursion ;; FIXME: necessary?
+                (save-excursion ; FIXME: necessary?
                   (save-restriction
                     (goto-char (1+ (nth 1 next)))
                     (narrow-to-region (1+ (nth 1 next)) (1- (nth 2 next)))
                     (sexprw-match-list-contents inners)))))
-           ;; (when result (goto-char (nth 2 next))) ;; save-excursion already resets to end of list
+           ;; save-excursion already resets to end of list
+           ;; (when result (goto-char (nth 2 next)))
            result))))
 
 (defun sexprw-match-list-contents (inners)
-  (let ((accum (list '()))) ;; nil or (list alist)
+  (let ((accum (list '()))) ; nil or (list alist)
     (dolist (inner inners)
       (when accum
         (let ((inner-result (sexprw-match inner)))
@@ -579,27 +584,26 @@ Advances point to end of sexp."
 
 (defun grab-next-sexp/require-pure ()
   "Returns (list PURE-TEXT START-POINT END-POINT) or nil.
-PURE-TEXT is text from START-POINT to END-POINT.
-START-POINT is the location of the first non-whitespace character, which 
-must also be the start of the sexp.
-Advances point to end of sexp."
+PURE-TEXT is text from START-POINT to END-POINT.  START-POINT is
+the location of the first non-whitespace character, which must
+also be the start of the sexp.  Advances point to end of sexp."
   (grab-next-sexp t t))
 
 (defun grab-next-sexp (pure require-pure)
   "Returns (list TEXT START-POINT END-POINT) or nil.
-TEXT is text from START-POINT to END-POINT.
-If PURE is non-nil, then START-POINT is taken as the start of the sexp; otherwise, it is 
-the first non-whitespace character.
-If REQUIRE-PURE is non-nil, then there must be no non-whitespace characters before the 
-start of the sexp, or else nil is returned.
-Advances point to end of sexp."
+TEXT is text from START-POINT to END-POINT.  If PURE is non-nil,
+then START-POINT is taken as the start of the sexp; otherwise, it
+is the first non-whitespace character.  If REQUIRE-PURE is
+non-nil, then there must be no non-whitespace characters before
+the start of the sexp, or else nil is returned.  Advances point
+to end of sexp."
   (let ((result (grab-next-sexp-range)))
     (and result
          (or (not require-pure) (equal (nth 1 result) (nth 2 result)))
          (let ((start (if pure (nth 2 result) (nth 1 result)))
                (end (nth 3 result)))
            (goto-char end)
-           (list (filter-buffer-substring start end nil t)
+           (list (filter-buffer-substring start end)
                  start
                  end)))))
 
@@ -608,10 +612,10 @@ Advances point to end of sexp."
   ;; can lead to treating "'x" as atomic sexp (shouldn't be).
   ;; Maybe add custom comment handling to avoid backwards scan?
   "Returns (list INIT-POINT WS-POINT START-POINT END-POINT) or nil.
-INIT-POINT is where point started. WS-POINT is the location of the first
-non-whitespace character. START-POINT is where the sexp starts. 
-END-POINT is where the sexp ends.
-Does not change point."
+INIT-POINT is where point started. WS-POINT is the location of
+the first non-whitespace character. START-POINT is where the sexp
+starts.  END-POINT is where the sexp ends.  Does not change
+point."
   (condition-case error-info
       (save-excursion
         (let ((init-point (point)))
@@ -667,7 +671,8 @@ On success, return (list ENV), so suitable as the body of a guard function."
 
 (defun sexprw-guard-no-dot (env &rest pvars)
   "Check that none of the atoms bound to the PVARS is a dot.
-On failure, return nil; on success, return (list ENV), so suitable as guard body."
+On failure, return nil; on success, return (list ENV), so suitable as
+guard body."
   (let ((worklist nil)
         (failed nil))
     (dolist (pvar pvars)
@@ -690,16 +695,17 @@ On failure, return nil; on success, return (list ENV), so suitable as guard body
 ;; ============================================================
 ;; Templates
 ;;
-;; T ::= string          ;; literal text, eg "\n" inserts non-latent newline
-;;     | (quote symbol)  ;; literal symbol
-;;     | (VAR symbol)    ;; pattern variable
-;;     | (LIST T*)       ;; parenthesized list
-;;     | (SQLIST T*)     ;; bracketed list
-;;     | (SPLICE T*)     ;; spliced list contents
-;;     | (SP)            ;; latent space (ie, change latent newline to latent space)
-;;     | (NL)            ;; latent newline
-;;     | (REP vars T*)   ;; NOTE: splicing repetition, to allow eg (REP <vars> expr NL)
-;;                       ;; vars is pvars to map over
+;; T ::= string          ; literal text, eg "\n" inserts non-latent newline
+;;     | (quote symbol)  ; literal symbol
+;;     | (VAR symbol)    ; pattern variable
+;;     | (LIST T*)       ; parenthesized list
+;;     | (SQLIST T*)     ; bracketed list
+;;     | (SPLICE T*)     ; spliced list contents
+;;     | (SP)            ; latent space (ie, change latent newline to latent
+;;     |                 ; space)
+;;     | (NL)            ; latent newline
+;;     | (REP vars T*)   ; NOTE: splicing repetition, to allow eg
+;;     |                 ; (REP <vars> expr NL) vars is pvars to map over
 ;;
 ;; PreOutput = (treeof (U string 'SP 'NL 'NONE))
 ;; Interpret PreOutput left to right; *last* spacing symbol to occur wins.
@@ -710,7 +716,7 @@ Returns a list of strings and latent spacing symbols ('SP and 'NL)."
   ;; (message "** template = %S" template)
   (cond ((stringp template)
          template)
-        ((not (and (listp template) (consp template)))
+        ((not (consp template))
          (error "Bad template: %S" template))
         ((eq (car template) 'quote)
          (list (symbol-name (cadr template))
@@ -745,21 +751,22 @@ Returns a list of strings and latent spacing symbols ('SP and 'NL)."
                    ;; Take *all* depth>0 pvars in env that occur in template
                    ;; (beware duplicate keys in alist)
                    (let* ((env-keys (sexprw-pattern-variables template '()))
-                          (env-keys (remove-duplicates env-keys))
+                          ;; FIXME: Ack! quadratic, mutates, etc
+                          (env-keys (delete-dups env-keys))
                           (raccum '()))
                      (dolist (key env-keys)
                        (when (eq (car (cdr (assq key env))) 'rep)
                          (setq raccum (cons key raccum))))
                      (reverse raccum))))
-         (vals (mapcar #'(lambda (pvar)
-                           (let ((entry (assq pvar env)))
-                             (unless entry
-                               (error "No entry for pvar '%s' in: %S" pvar env))
-                             (let ((value (cdr entry)))
-                               (unless (and (consp value) (eq (car value) 'rep))
-                                 (error "Value for pvar '%s' is not list (depth error): %S"
-                                        pvar entry))
-                               (cdr value))))
+         (vals (mapcar (lambda (pvar)
+                         (let ((entry (assq pvar env)))
+                           (unless entry
+                             (error "No entry for pvar '%s' in: %S" pvar env))
+                           (let ((value (cdr entry)))
+                             (unless (and (consp value) (eq (car value) 'rep))
+                               (error "Value for pvar '%s' is not list (depth error): %S"
+                                      pvar entry))
+                             (cdr value))))
                        vars)))
     (unless vars (error "No repetition vars for REP: ~S" template))
     (let* ((lengths (mapcar #'length vals))
@@ -776,12 +783,6 @@ Returns a list of strings and latent spacing symbols ('SP and 'NL)."
                   (cons (sexprw-template inner extenv)
                         raccum))))
         (reverse raccum)))))
-
-;; FIXME: Ack! quadratic, delete mutates, etc
-(defun remove-duplicates (lst)
-  (cond ((consp lst)
-         (cons (car lst) (remove-duplicates (delete (car lst) (cdr lst)))))
-        (t nil)))
 
 (defun split/extend-env (vars vals env)
   (let* ((val1s (mapcar #'car vals))
@@ -800,7 +801,7 @@ Returns a list of strings and latent spacing symbols ('SP and 'NL)."
       (cond ((and (consp value) (eq (car value) 'atom))
              (list (cadr value) 'SP))
             ((and (consp value) (eq (car value) 'block))
-             (list (if (nth 2 value) nil 'NL) ;; FIXME: tweak?
+             (list (if (nth 2 value) nil 'NL) ; FIXME: tweak?
                    (nth 1 value)
                    (if (nth 2 value) 'SP 'NL)))
             ((and (consp value) (eq (car value) 'rep))
@@ -810,7 +811,7 @@ Returns a list of strings and latent spacing symbols ('SP and 'NL)."
 (defun sexprw-template-list-contents (inners env)
   ;; We don't add inter-element spacing here; 
   ;; each element should add its own trailing spacing.
-  (let ((accum (list '()))) ;; nil or (list PreOutput)
+  (let ((accum (list '()))) ; nil or (list PreOutput)
     (dolist (inner inners)
       (setq accum (cons accum (sexprw-template inner env))))
     accum))
@@ -849,21 +850,20 @@ Returns a list of strings and latent spacing symbols ('SP and 'NL)."
 (defun sexprw-squarify (&optional times)
   "Turn round parens into square brackets."
   (interactive "P")
-  (let ((times
-         (cond ((numberp times) times)
-               ((consp times) (car times))
-               ((null times) nil))))
+  (let ((times (cond ((numberp times) times)
+                     ((consp times) (car times))
+                     ((null times) nil))))
     (save-excursion
       (sexprw-rebracket-repeat times "(" "[" "]" "parenthesis"))
     nil))
 
 (defconst sexprw-all-whitespace-re 
-  ;; "\\(\\s-\\|[\n]\\)*"  ;; ??? matches close parens too?
+  ;; "\\(\\s-\\|[\n]\\)*"  ; ??? matches close parens too?
   "[[:space:]\n]*")
 
 (defun sexprw-open-bracket-re (from)
   ;; (concat "[[:space:]]*" (regexp-quote from))
-  ;; (concat "\\s-*" (regexp-quote from))  ;; doesn't get newlines
+  ;; (concat "\\s-*" (regexp-quote from))  ; doesn't get newlines
   (concat sexprw-all-whitespace-re (regexp-quote from)))
 
 (defun sexprw-rebracket-once (from to-open to-close bracket-name)
@@ -895,7 +895,8 @@ Returns a list of strings and latent spacing symbols ('SP and 'NL)."
 (defun sexprw-search-pattern (pattern)
   "Search forward for sexp matching PATTERN."
   (interactive
-   (list (read-from-minibuffer "Search pattern: " nil nil t 'sexpr-pattern-history)))
+   (list (read-from-minibuffer "Search pattern: " nil nil t
+                               'sexpr-pattern-history)))
   (sexprw-search-pattern/ast (desugar-pattern pattern nil 0)))
 
 (defun sexprw-search-pattern/ast (pattern)
@@ -923,7 +924,8 @@ Returns a list of strings and latent spacing symbols ('SP and 'NL)."
          (next-sexp-start (and next-sexp-end
                                (ignore-errors (scan-sexps next-sexp-end -1))))
          (next-list-start (ignore-errors (scan-lists init-point 1 -1))))
-    ;; (message "next-sexp-end = %s, next-list-start = %s" next-sexp-end next-list-start)
+    ;; (message "next-sexp-end = %s, next-list-start = %s"
+    ;;          next-sexp-end next-list-start)
     (cond ((and next-sexp-start (> next-sexp-start init-point))
            ;; (message "Going to start of next sexp")
            (goto-char next-sexp-start)
