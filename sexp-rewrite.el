@@ -465,7 +465,7 @@ Advances point to end of matched term(s)."
                 (list
                  (list (cons pvar
                              (list 'block
-                                   (filter-buffer-substring init-point (point) nil t)
+                                   (filter-buffer-substring init-point (point))
                                    (line-number-at-pos init-point)
                                    (line-number-at-pos (point)))))))))
         (t (error "Bad pattern variable kind for pvar '%s': %s" pvar kind))))
@@ -599,7 +599,7 @@ Advances point to end of sexp."
          (let ((start (if pure (nth 2 result) (nth 1 result)))
                (end (nth 3 result)))
            (goto-char end)
-           (list (filter-buffer-substring start end nil t)
+           (list (filter-buffer-substring start end)
                  start
                  end)))))
 
