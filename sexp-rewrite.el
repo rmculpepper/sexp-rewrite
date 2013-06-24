@@ -47,9 +47,6 @@ for more details.")
 ;;   - minor mode ??
 ;;   - make sure keybindings are added politely
 ;;   - customization options ??
-;; - enable tactics & tacticals organization
-;;   eg "try X until it fails", "try X or Y", etc
-;;   - think about how to build composable tactics
 ;; - tweak whitespace handling ??
 ;; - hook for scan-sexps replacement
 ;; - hook for scan-whitespace, scan-comments replacements
@@ -62,6 +59,7 @@ for more details.")
 ;; - custom var to disable square brackets (use parens instead)
 ;; - check template funs, convert errors to nil (eg, ellipsis count
 ;;   mismatch) or at least wrap in ignore-errors, set last-failure var
+;; - build "tactic apropos"---search by literals in tactic pattern & template
 
 ;; long term
 ;; - port to DrRacket

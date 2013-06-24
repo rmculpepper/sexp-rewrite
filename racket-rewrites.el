@@ -46,21 +46,20 @@
 ;; Could be triggered automatically via pattern search.
 
 (setq sexprw-auto-expression-tactics
-      (append '(if-to-cond
-                cond-else-absorb-cond
-                cond-else-absorb-if
-                let-if-to-cond
-                cond-else-absorb-let-if
-                letrec-to-definitions
-                let-loop-to-definition
-                ;; let-to-definitions
-                let-absorb-let*
-                let*-absorb-let
-                begin-trivial
-                map for-each ormap andmap foldl
-                build-list for/sum-from-map for/sum-from-for/list
-                in-list-vector->list)
-              sexprw-auto-expression-tactics))
+      '(if-to-cond
+        cond-else-absorb-cond
+        cond-else-absorb-if
+        let-if-to-cond
+        cond-else-absorb-let-if
+        letrec-to-definitions
+        let-loop-to-definition
+        ;; let-to-definitions
+        let-absorb-let*
+        let*-absorb-let
+        begin-trivial
+        map for-each ormap andmap foldl
+        build-list for/sum-from-map for/sum-from-for/list
+        in-list-vector->list))
 
 (define-sexprw-tactic if-to-cond
   (sexprw-rewrite
@@ -257,15 +256,14 @@
 ;; Most of these are unsafe if applied in an expression context.
 
 (setq sexprw-auto-definition-tactics
-      (append '(define-absorb-lambda
-                splice-begin
-                splice-letrec
-                splice-empty-let
-                define-case-lambda-sort-clauses
-                define-case-lambda-to-optionals
-                define-rest-to-optional/same-name
-                define-rest-to-optional/different-name)
-              sexprw-auto-definition-tactics))
+      '(define-absorb-lambda
+         splice-begin
+         splice-letrec
+         splice-empty-let
+         define-case-lambda-sort-clauses
+         define-case-lambda-to-optionals
+         define-rest-to-optional/same-name
+         define-rest-to-optional/different-name))
 
 (define-sexprw-tactic define-absorb-lambda
   (sexprw-rewrite
