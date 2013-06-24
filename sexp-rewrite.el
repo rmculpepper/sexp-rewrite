@@ -150,7 +150,7 @@ Customizable via the variable `sexpr-auto-definition-tactics'."
       (setq success nil)
       (dolist (tactic tactics)
         (unless success
-          (when (ignore-errors (sexprw-run-tactic tactic) t)
+          (when (progn 'ignore-errors (sexprw-run-tactic tactic) t)
             (setq success t)
             (setq rused (cons tactic rused)))))
       (unless success (setq times 0)))
@@ -204,14 +204,14 @@ Customizable via the variable `sexpr-auto-definition-tactics'."
           (indent-region start (+ start (length replacement))))))))
 
 (defun sexprw-show-rewrite/ast (pattern template &optional guard)
-  (message "pattern = %S" pattern)
+  ;; (message "pattern = %S" pattern)
   (save-excursion
     (let ((env (sexprw-match pattern)))
-      (message "env = %S" env)
+      ;; (message "env = %S" env)
       (and env
            (sexprw-check-nonlinear-patterns (car env))
            (let ((env* (if guard (funcall guard (car env)) env)))
-             (message "guarded env = %S" env*)
+             ;; (message "guarded env = %S" env*)
              (and env*
                   (let ((preoutput (sexprw-template template (car env*))))
                     ;; (message "preoutput = %S" preoutput)
@@ -503,15 +503,16 @@ Advances point to end of matched term(s)."
            (reverse accum)))))
 
 (defun sexprw-pattern-variables (pattern onto)
+  ;; Accept templates too
   (cond ((eq (car pattern) 'VAR)
          (cons (nth 1 pattern) onto))
-        ((memq (car pattern) '(LIST SPLICE))
+        ((memq (car pattern) '(LIST SPLICE SQLIST))
          (dolist (inner (cdr pattern))
            (setq onto (sexprw-pattern-variables inner onto)))
          onto)
         ((eq (car pattern) 'REP)
          (sexprw-pattern-variables (nth 1 pattern) onto))
-        ((memq (car pattern) '(quote))
+        ((memq (car pattern) '(quote SP NL))
          onto)
         (t (error "Bad pattern: %S" pattern))))
 
@@ -638,10 +639,12 @@ Returns a list of strings and latent spacing symbols ('SP and 'NL)."
          (sexprw-template-rep template env))))
 
 (defun sexprw-template-rep (template env)
+  ;; (message "env for rep = %S" env)
   (let* ((inner (nth 1 template))
          (vars (or (nth 2 template)
-                   ;; Take *all* depth>0 pvars in env (beware duplicate keys in alist)
-                   (let* ((env-keys (mapcar #'car env))
+                   ;; Take *all* depth>0 pvars in env that occur in template
+                   ;; (beware duplicate keys in alist)
+                   (let* ((env-keys (sexprw-pattern-variables template '()))
                           (env-keys (remove-duplicates env-keys))
                           (raccum '()))
                      (dolist (key env-keys)

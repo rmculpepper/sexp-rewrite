@@ -7,6 +7,9 @@
 ;; ============================================================
 ;; TO DO
 
+;; case-lambda-sort-clauses
+;; case-lambda-to-lambda-with-optional-arguments
+
 ;; short term
 ;; - build big library of Scheme/Racket tactics
 ;; - build automatic tactics
@@ -18,6 +21,16 @@
 
 ;; long term
 ;; - port to DrRacket, etc (see sexp-rewrite todo)
+
+;; ============================================================
+;; On safety
+
+;; Need to figure out how to compromise between safety and usability.
+
+;; Every last one of these is unsafe if literals don't have their
+;; standard bindings.
+;; 
+;; Most of them are slightly unsafe.
 
 ;; ============================================================
 ;; Using racket-rewrites
@@ -33,12 +46,18 @@
 ;; Could be triggered automatically via pattern search.
 
 (setq sexprw-auto-expression-tactics
-      (append '(letrec-to-definitions
-                begin-trivial
-                if-to-cond
-                cond-else-absorb-if
+      (append '(if-to-cond
                 cond-else-absorb-cond
-                map for-each ormap andmap foldl)
+                cond-else-absorb-if
+                let-if-to-cond
+                cond-else-absorb-let-if
+                letrec-to-definitions
+                let-loop-to-definition
+                ;; let-to-definitions
+                begin-trivial
+                map for-each ormap andmap foldl
+                build-list for/sum-from-map for/sum-from-for/list
+                in-list-vector->list)
               sexprw-auto-expression-tactics))
 
 (define-sexprw-tactic if-to-cond
@@ -67,7 +86,7 @@
    '(cond %%clauses (else (if %test %then %else)))
    '(cond %%clauses !NL (!SQ %test %then) !NL (!SQ else %else))))
 
-(define-sexprw-tactic unsafe-let-if-to-cond
+(define-sexprw-tactic let-if-to-cond
   ;; Unsafe if $name occurs free in %else
   (sexprw-rewrite
    '(let (($name %rhs))
@@ -75,7 +94,7 @@
    '(cond (!SQ %rhs !NL => (lambda ($name) !NL %then)) !NL
           (!SQ else !NL %else))))
 
-(define-sexprw-tactic unsafe-cond-else-absorb-let-if
+(define-sexprw-tactic cond-else-absorb-let-if
   ;; Unsafe if $name occurs free in %else
   (sexprw-rewrite
    '(cond %%rest (else (let (($name %rhs)) (if $name %then %else))))
@@ -83,7 +102,7 @@
           (!SQ %rhs !NL => (lambda ($name) !NL %then)) !NL
           (!SQ else %else))))
 
-';; example for unsafe-let-if-to-cond
+';; example for let-if-to-cond
 (let ([x (assq key alist)])
   (if x
       (cdr x)
@@ -104,6 +123,36 @@
 (letrec ([odd? (lambda (x) (not (even? x)))]
          [even? (lambda (x) (or (zero? x) (even? (sub1 x))))])
   odd?)
+
+(define-sexprw-tactic let-loop-to-definition
+  ;; Unsafe if $name occurs free in %init
+  (sexprw-rewrite
+   '(let $loop (($arg %init) ...) %%body)
+   '(let () !NL
+      (define ($loop $arg ...) !NL
+        %%body)
+      !NL
+      ($loop %init ...))))
+
+;; Would be nice to recognize potential 'for' loops,
+;; but needs a lot more information than we have here.
+
+';; example for let loop
+(let loop ([rejected 0] [racc '()] [lst the-stuff])
+  (cond [(pair? lst)
+         (if (ok? (car lst))
+             (loop count (cons (car lst) racc) (cdr lst))
+             (loop (add1 count) racc (cdr lst)))]
+        [else
+         (values rejected (reverse racc))]))
+
+(define-sexprw-tactic let-to-definitions
+  ;; Unsafe if any %rhs has free occurrences of any $name,
+  ;; or if %%body contains definitions of some $x where $x collides with
+  ;; some $name or if $x occurs free in any %rhs.
+  (sexprw-rewrite
+   '(let (($name %rhs) ...) %%body)
+   '(let () !NL (!SPLICE (define $name %rhs) !NL) ... %%body)))
 
 (define-sexprw-tactic begin-trivial
   ;; See also let-splice, begin-splice
@@ -163,10 +212,6 @@
 ;;            #:when (%pred $name))    ;; unsafe: puts %pred in scope of $name
 ;;      %%body)
 
-;; ============================================================
-;; More expression rewrites
-;; The following rules probably aren't useful often
-
 (define-sexprw-tactic build-list
   (sexprw-rewrite
    '(build-list %n (lambda ($arg) %%body))
@@ -182,13 +227,80 @@
    '(apply + (for/list %%body))
    '(for/sum %%body)))
 
+(define-sexprw-tactic in-list-vector->list
+  (sexprw-rewrite
+   '(in-list (vector->list %e))
+   '(in-vector %e)))
+
+(define-sexprw-tactic case-lambda-sort-clauses
+  (sexprw-rewrite
+   '(case-lambda (($var ...) %%body) ...)
+   '(case-lambda !NL (!SPLICE (!SQ ($sorted-var ...) !NL %%sorted-body) !NL) ...)
+   (lambda (env)
+     ;; check no $var is a dot (means rest args)
+     ;; sort vars and bodies together by length of vars list
+     (cond ((let (found-dot)
+              (dolist (vars-entry (cdr (cdr (assq '$var env))))
+                (dolist (var (cdr vars-entry))
+                  (when (equal var '(atom "."))
+                    (setq found-dot t))))
+              found-dot)
+            nil)
+           (t
+            (let ((clauses nil)
+                  (var-entries (cdr (cdr (assq '$var env))))
+                  (bodies (cdr (cdr (assq '%%body env)))))
+              (while var-entries
+                (setq clauses (cons (cons (car var-entries) (car bodies)) clauses))
+                (setq var-entries (cdr var-entries))
+                (setq bodies (cdr bodies)))
+              (setq clauses
+                    (sort clauses
+                          (lambda (a b)
+                            ;; use >, then reverse-split result
+                            (> (length (car a)) (length (car b))))))
+              (dolist (clause clauses)
+                (setq var-entries (cons (car clause) var-entries))
+                (setq bodies (cons (cdr clause) bodies)))
+              (list
+               (append
+                (list (cons '$sorted-var (cons 'rep var-entries))
+                      (cons '%%sorted-body (cons 'rep bodies)))
+                env))))))))
+
+';; example for case-lambda
+(define f
+  (case-lambda
+   [(x) (f x 2])
+   [(x y) (f x y)]
+   [() (f 1)]))
+
+(define-sexprw-tactic define-case-lambda-to-optionals
+  '(define $name
+     (case-lambda
+      (($arg ...) ($uname $arg ... %newarg)) ...
+      (($farg ...) %%body)))
+  '(define ($name $required-arg ... (!SQ $optional-arg %newarg) ...) !NL
+     %%body)
+  (lambda (env)
+    ;; each $uname is $name (nonlinear pvars don't work here, different depths :(
+    ;; each arglist is one shorter than next ($arg names don't have to match)
+    ;; done by pattern: each clause applies $uname to args, plus one new arg at end
+    ;; split $farg into $required-arg and $optional-arg
+    nil))
+
+
+
 ;; ============================================================
 ;; Definition rewritings
 
+;; Most of these are unsafe if applied in an expression context.
+
 (setq sexprw-auto-definition-tactics
       (append '(define-absorb-lambda
-                splice-let
-                splice-begin)
+                splice-begin
+                splice-letrec
+                splice-empty-let)
               sexprw-auto-definition-tactics))
 
 (define-sexprw-tactic define-absorb-lambda
@@ -205,43 +317,21 @@
     ;; trailing comment
     ))
 
-(define-sexprw-tactic let-loop-to-definition
+(define-sexprw-tactic splice-begin
   (sexprw-rewrite
-   '(let $loop (($arg %init) ...) %%body)
-   '(let () !NL
-      (define ($loop $arg ...) !NL
-        %%body)
-      !NL
-      ($loop %init ...))))
-
-;; Would be nice to recognize potential 'for' loops,
-;; but needs a lot more information than we have here.
-
-';; example for let loop
-(let loop ([rejected 0] [racc '()] [lst the-stuff])
-  (cond [(pair? lst)
-         (if (ok? (car lst))
-             (loop count (cons (car lst) racc) (cdr lst))
-             (loop (add1 count) racc (cdr lst)))]
-        [else
-         (values rejected (reverse racc))]))
-
-;; Unsafe definition-context tactics. Unsafe because they change
-;; scopes. (Even worse if you apply them in expr context.)
+   '(begin %%body)
+   '%%body))
 
 (define-sexprw-tactic splice-letrec
+  ;; Unsafe, changes scope of $names
   (sexprw-rewrite
    '(letrec ((!REP ($name %rhs))) %%body)
    '(!SPLICE (!REP (define $name !NL %rhs) !NL) %%body)))
 
-(define-sexprw-tactic splice-let
+(define-sexprw-tactic splice-empty-let
+  ;; Unsafe if %%body contains definitions: changes their scopes
   (sexprw-rewrite
    '(let () %%body)
-   '%%body))
-
-(define-sexprw-tactic splice-begin
-  (sexprw-rewrite
-   '(begin %%body)
    '%%body))
 
 ;; ============================================================
