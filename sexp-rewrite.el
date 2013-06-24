@@ -150,7 +150,7 @@ Customizable via the variable `sexpr-auto-definition-tactics'."
       (setq success nil)
       (dolist (tactic tactics)
         (unless success
-          (when (progn 'ignore-errors (sexprw-run-tactic tactic) t)
+          (when (and 'ignore-errors (sexprw-run-tactic tactic) t)
             (setq success t)
             (setq rused (cons tactic rused)))))
       (unless success (setq times 0)))
@@ -198,10 +198,12 @@ Customizable via the variable `sexpr-auto-definition-tactics'."
       (save-excursion
         (let* ((replacement (sexprw-show-rewrite/ast pattern template guard))
                (replacement-length (length replacement)))
-          (unless replacement (error "sexprw-rewrite: Pattern match failed"))
-          (delete-and-extract-region start end)
-          (insert replacement)
-          (indent-region start (+ start (length replacement))))))))
+          (and replacement
+               (progn
+                 (delete-and-extract-region start end)
+                 (insert replacement)
+                 (indent-region start (+ start (length replacement)))
+                 t)))))))
 
 (defun sexprw-show-rewrite/ast (pattern template &optional guard)
   ;; (message "pattern = %S" pattern)
@@ -515,6 +517,11 @@ Advances point to end of matched term(s)."
         ((memq (car pattern) '(quote SP NL))
          onto)
         (t (error "Bad pattern: %S" pattern))))
+
+(defun sexprw-env-ref (env key)
+  ;; All valid env values are non-nil, so no info loss.
+  (let ((result (assq key env)))
+    (and result (cdr result))))
 
 ;; ----
 
