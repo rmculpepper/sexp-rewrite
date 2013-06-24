@@ -270,7 +270,8 @@ Customizable via the variable `sexprw-auto-definition-tactics'."
 ;;      | %name          ~ (VAR %name SEXP)
 ;;      | %%name         ~ (VAR %%name REST n) ; n is # patterns that follow
 ;;      | (PP*)          ~ (LIST P*)
-;;      | (!SPLICE P*)   ~ (SPLICE P*)
+;;      | (!@ PP*)       ~ (SPLICE P*)
+;;      | (!SPLICE PP*)  ~ (SPLICE P*)
 ;;      | (!REP PP)      ~ (REP P 0)
 ;;      | PP ...         ~ (REP P n)           ; n is # patterns that follow
 
@@ -307,7 +308,7 @@ Customizable via the variable `sexprw-auto-definition-tactics'."
                  (t `(quote ,pretty)))))
         ((not (consp pretty))
          (error "Bad %s: %s" (if template "template" "pattern") pretty))
-        ((eq (car pretty) '!SPLICE)
+        ((memq (car pretty) '(!@ !SPLICE))
          (cons 'SPLICE (desugar-pattern-list (cdr pretty) template upto)))
         ((eq (car pretty) '!SQ)
          (if template

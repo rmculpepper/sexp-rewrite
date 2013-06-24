@@ -115,7 +115,7 @@
 (define-sexprw-tactic letrec-to-definitions
   (sexprw-rewrite
    '(letrec (($name %rhs) ...) %%body)
-   '(let () !NL (!SPLICE (define $name %rhs) !NL) ... %%body)))
+   '(let () !NL (!@ (define $name %rhs) !NL) ... %%body)))
 
 ' ; example for letrec-to-definitions
 (letrec ([odd? (lambda (x) (not (even? x)))]
@@ -150,7 +150,7 @@
   ;; or if $x occurs free in any %rhs.
   (sexprw-rewrite
    '(let (($name %rhs) ...) %%body)
-   '(let () !NL (!SPLICE (define $name %rhs) !NL) ... %%body)))
+   '(let () !NL (!@ (define $name %rhs) !NL) ... %%body)))
 
 ;; let/let* absorption requires single-clause lets; unsafe otherwise
 ;; (changes scoping)
@@ -189,7 +189,7 @@
 (defun r-*map (map-symbol for-symbol)
   (sexprw-rewrite
    `(,map-symbol (lambda ($arg ...) %%body) %lst ...)
-   `(,for-symbol ((!SPLICE (!SQ $arg (in-list %lst)) !NL) ...) !NL %%body)))
+   `(,for-symbol ((!@ (!SQ $arg (in-list %lst)) !NL) ...) !NL %%body)))
 
 ' ; example for ormap
 (define (pointwise< xs ys)
@@ -213,7 +213,7 @@
   (sexprw-rewrite
    '(foldl (lambda ($arg ... $accum) %%body) %init %lst ...)
    '(for/fold ((!SQ $accum %init)) !NL
-              ((!SPLICE (!SQ $arg (in-list %lst)) !NL) ...) !NL
+              ((!@ (!SQ $arg (in-list %lst)) !NL) ...) !NL
       %%body)))
 
 ' ; example for foldl
@@ -236,7 +236,7 @@
 (define-sexprw-tactic for/sum-from-map
   (sexprw-rewrite
    '(apply + (map (lambda ($arg ...) %%body) %lst ...))
-   '(for/sum ((!SPLICE (!SQ $arg (in-list %lst)) !NL) ...) !NL %%body)))
+   '(for/sum ((!@ (!SQ $arg (in-list %lst)) !NL) ...) !NL %%body)))
 
 (define-sexprw-tactic for/sum-from-for/list
   (sexprw-rewrite
@@ -286,7 +286,7 @@
   ;; Unsafe, changes scope of $names
   (sexprw-rewrite
    '(letrec ((!REP ($name %rhs))) %%body)
-   '(!SPLICE (!REP (define $name !NL %rhs) !NL) %%body)))
+   '(!@ (!REP (define $name !NL %rhs) !NL) %%body)))
 
 (define-sexprw-tactic splice-empty-let
   ;; Unsafe if %%body contains definitions: changes their scopes
@@ -301,8 +301,7 @@
    '(define $name (case-lambda (($var ...) %%body) ...))
    '(define $name !NL
       (case-lambda !NL
-                   (!SPLICE (!SQ ($sorted-var ...) !NL %%sorted-body) !NL)
-                   ...))
+        (!@ (!SQ ($sorted-var ...) !NL %%sorted-body) !NL) ...))
    (lambda (env)
      ;; check no $var is a dot (means rest args)
      ;; sort vars and bodies together by length of vars list
