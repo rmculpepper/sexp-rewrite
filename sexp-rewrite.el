@@ -96,31 +96,56 @@ for more details.")
 (defvar sexprw-pattern-history nil)
 (defvar sexprw-template-history nil)
 
+(defgroup sexp-rewrite-group nil
+  "Customization options for sexp-rewrite."
+  :group 'scheme)
+
+(defcustom sexprw-disabled-auto-tactics nil
+  "Tactics that should not be run automatically.
+Affects only `sexprw-auto-expression' and `sexprw-auto-definition';
+disabled tactics can still be run via `sexprw-execute-tactic', etc."
+  :type '(repeat symbol)
+  :group 'sexp-rewrite-group)
+
+(defun sexprw-disable-tactic (tactic-name)
+  (interactive
+   (list (sexprw-read-tactic-from-minibuffer)))
+  (push tactic-name sexprw-disabled-auto-tactics))
+
+(defun sexprw-enable-tactic (tactic-name)
+  (interactive
+   (list (sexprw-read-tactic-from-minibuffer)))
+  (setq sexprw-disabled-auto-tactics
+        (delete tactic-name sexprw-disabled-auto-tactics)))
+
 (defun sexprw-auto-expression (&optional times)
   "Run the default sexp-rewrite tactics for expressions.
 Customizable via the variable `sexprw-auto-expression-tactics'."
   (interactive "p")
-  (sexprw-execute-tactics sexprw-auto-expression-tactics times))
+  (sexprw-execute-tactics sexprw-auto-expression-tactics times t))
 (defun sexprw-auto-definition (&optional times)
   "Run the default sexp-rewrite tactics for definitions.
 Customizable via the variable `sexprw-auto-definition-tactics'."
   (interactive "p")
-  (sexprw-execute-tactics sexprw-auto-definition-tactics times))
+  (sexprw-execute-tactics sexprw-auto-definition-tactics times t))
+
+(defun sexprw-read-tactic-from-minibuffer (&optional prompt history)
+  (intern
+   (completing-read (or prompt "Tactic: ")
+                    obarray
+                    'sexprw-tactic-symbolp
+                    t
+                    nil
+                    (or history 'sexprw-tactic-symbolp))))
 
 (defun sexprw-execute-tactic (tactic-name &optional times0)
   "Read sexprw-rewrite tactic, then try to execute it."
   (interactive
-   (list (intern 
-          (completing-read "Tactic: "
-                           obarray
-                           'sexprw-tactic-symbolp
-                           t
-                           nil
-                           'sexprw-tactic-history))
+   (list (sexprw-read-tactic-from-minibuffer)
          (prefix-numeric-value current-prefix-arg)))
-  (sexprw-execute-tactics (list tactic-name) times0))
+  (sexprw-execute-tactics (list tactic-name) times0 nil))
 
-(defun sexprw-execute-tactics (tactic-names times0)
+(defun sexprw-execute-tactics (tactic-names times0 respect-disabled)
   (setq sexprw-failure-info nil)
   (let ((rused (sexprw-run-tactics-until-success tactic-names times0)))
     (cond ((consp rused)
@@ -141,7 +166,7 @@ Customizable via the variable `sexprw-auto-definition-tactics'."
            (funcall tactic))
          (list tactic-name))))
 
-(defun sexprw-run-tactics-until-success (tactics &optional times0)
+(defun sexprw-run-tactics-until-success (tactics &optional times0 respect-disabled)
   (let ((times times0)
         success
         rused)
@@ -149,10 +174,11 @@ Customizable via the variable `sexprw-auto-definition-tactics'."
       (setq times (1- times))
       (setq success nil)
       (dolist (tactic tactics)
-        (unless success
-          (when (sexprw-run-tactic tactic)
-            (setq success t)
-            (setq rused (cons tactic rused)))))
+        (unless (memq tactic sexprw-disabled-auto-tactics)
+          (unless success
+            (when (sexprw-run-tactic tactic)
+              (setq success t)
+              (setq rused (cons tactic rused))))))
       (unless success (setq times 0)))
     rused))
 
