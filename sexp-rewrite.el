@@ -57,6 +57,8 @@ for more details.")
 ;;     spacing directives into PreOutput pass rather than output pass.
 ;; - custom var to disable square brackets (use parens instead)
 ;; - build "tactic apropos"---search by literals in tactic pattern & template
+;; - more interactive/flexible rewriting
+;;   - eg, move let/let*/letrec bindings to <interactive point>
 
 ;; long term
 ;; - port to DrRacket
@@ -870,7 +872,7 @@ Returns a list of strings and latent spacing symbols ('SP and 'NL)."
            (goto-char end)
            (delete-char 1)
            (insert to-close)
-           (goto-char (1+ (point)))
+           ;; (goto-char (1+ (point)))
            ))
         (t
          (message "Not at open %s" bracket-name))))
