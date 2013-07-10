@@ -433,6 +433,11 @@
 ;; Specialized rewritings
 ;; Need to be explicitly triggered.
 
+(define-sexprw-tactic split-let
+  (sexprw-rewrite
+   '(let (%clause %%more-clauses) %%body)
+   '(let (%clause) !NL (let (%%more-clauses) !NL %%body))))
+
 (define-sexprw-tactic split-let*
   ;; Occasionally useful for eg define-rest-to-optionals
   (sexprw-rewrite 
