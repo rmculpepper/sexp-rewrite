@@ -832,7 +832,7 @@ Returns a list of strings and latent spacing symbols ('SP and 'NL)."
       (cond ((and (consp value) (eq (car value) 'atom))
              (list (cadr value) 'SP))
             ((and (consp value) (eq (car value) 'block))
-             (list (if (nth 2 value) nil 'NL) ; FIXME: tweak?
+             (list nil ;; (if (nth 2 value) nil 'NL) ; FIXME: tweak?
                    (let ((rect (nth 3 value)))
                      (if rect
                          (cons 'RECT rect)
