@@ -219,14 +219,13 @@ Customizable via the variable `sexprw-auto-definition-tactics'."
       (and replacement
            (progn
              (delete-and-extract-region init-point (point))
-             (insert replacement)
-             (indent-region init-point (+ init-point (length replacement)))
+             (sexprw-emit replacement)
              t)))))
 
 (defun sexprw-compute-rewrite/ast (pattern template &optional guard)
   ;; (message "pattern = %S" pattern)
   (let ((env (sexprw-match pattern)))
-    (message "point = %S" (point))
+    ;; (message "point = %S" (point))
     ;; (message "env = %S" env)
     (and env
          (sexprw-check-nonlinear-patterns (car env))
@@ -405,7 +404,8 @@ Customizable via the variable `sexprw-auto-definition-tactics'."
 ;;
 ;; Matching builds an alist mapping pvar symbols to EnvValue
 ;; EnvValue ::= (list 'atom string)              ; representing symbol
-;;            | (list 'block string one-line?)   ; representing SEXP, REST
+;;            | (list 'block string one-line?    ; representing SEXP, REST
+;;                           strings/nil nat nat)
 ;;            | (list 'rep EnvValue)             ; representing depth>0 list
 ;;
 ;; (REP P n), like (VAR name REST n), stops 'n' sexps before end
@@ -433,7 +433,7 @@ term(s)."
          (error "Bad pattern: %s" pattern))
         ((eq (car pattern) 'quote)
          ;; Note: grabs pure-sexp, checks contains symbol
-         (let ((next (grab-next-sexp/require-pure)))
+         (let ((next (sexprw-grab-next-sexp t t)))
            (and (or next
                     (sexprw-fail `(match quote pure-sexp)))
                 (let ((pure-text (car next)))
@@ -457,7 +457,7 @@ term(s)."
 (defun sexprw-match-var (pvar kind args)
   (cond ((eq kind 'SYM)
          ;; Note: grabs pure-sexp, checks contains symbol
-         (let ((next (grab-next-sexp/require-pure)))
+         (let ((next (sexprw-grab-next-sexp t t)))
            (and (or next
                     (sexprw-fail `(match var sym grab)))
                 (let ((pure-text (car next)))
@@ -465,34 +465,31 @@ term(s)."
                            (sexprw-fail `(match var sym equal)))
                        (list (list (cons pvar (list 'atom pure-text)))))))))
         ((eq kind 'PURE-SEXP)
-         (let ((next (grab-next-sexp/require-pure)))
+         (let ((next (sexprw-grab-next-sexp t t)))
            (and (or next
                     (sexprw-fail `(match var pure-sexp grab)))
-                (let ((pure-text (car next))
-                      (same-line (= (line-number-at-pos (nth 1 next))
-                                    (line-number-at-pos (nth 2 next)))))
-                  (list (list (cons pvar (list 'block pure-text
-                                               same-line))))))))
+                (list (list (cons pvar (cons 'block next)))))))
         ((eq kind 'SEXP)
-         (let ((next (grab-next-impure-sexp)))
+         (let ((next (sexprw-grab-next-sexp nil nil)))
            (and (or next
                     (sexprw-fail `(match var sexp grab)))
-                (let ((impure-text (car next))
-                      (same-line   (= (line-number-at-pos (nth 1 next))
-                                      (line-number-at-pos (nth 2 next)))))
-                  (list (list (cons pvar (list 'block impure-text
-                                               same-line))))))))
+                (list (list (cons pvar (cons 'block next)))))))
         ((eq kind 'REST)
+         ;; (message "matching REST %S" (car args))
          (sexprw-skip-whitespace)
          (let ((init-point (point)))
+           ;; (message "REST: init-point = %S" init-point)
            (and (or (skip-forward-to-n-sexps-before-end (car args))
                     (sexprw-fail `(match var rest skip ,(car args))))
                 (list
                  (list (cons pvar
                              (list 'block
                                    (filter-buffer-substring init-point (point))
-                                   (line-number-at-pos init-point)
-                                   (line-number-at-pos (point)))))))))
+                                   (= (line-number-at-pos init-point)
+                                      (line-number-at-pos (point)))
+                                   (sexprw-rectangle init-point (point))
+                                   init-point
+                                   (point))))))))
         (t (error "Bad pattern variable kind for pvar '%s': %s" pvar kind))))
 
 ;; returns t on success, nil if fewer than n sexps before end
@@ -511,19 +508,18 @@ term(s)."
                     t))))))
 
 (defun sexprw-match-list (inners)
-  (let ((next (grab-next-sexp/require-pure)))
+  (let ((next (sexprw-grab-next-sexp t t)))
     (and (or next
              (sexprw-fail `(match-list grab)))
          (member (substring (car next) 0 1) '("(" "[" "{"))
          ;; narrow to just after start, just before end
          (let ((result
-                (save-excursion ; FIXME: necessary?
+                (save-excursion
                   (save-restriction
-                    (goto-char (1+ (nth 1 next)))
-                    (narrow-to-region (1+ (nth 1 next)) (1- (nth 2 next)))
+                    (goto-char (1+ (nth 3 next)))
+                    (narrow-to-region (1+ (nth 3 next)) (1- (nth 4 next)))
                     (sexprw-match-list-contents inners)))))
-           ;; save-excursion already resets to end of list
-           ;; (when result (goto-char (nth 2 next)))
+           ;; save-excursion resets point to end of list
            result))))
 
 (defun sexprw-match-list-contents (inners)
@@ -589,46 +585,58 @@ term(s)."
 
 ;; ----
 
-(defun grab-next-impure-sexp ()
-  "Returns (list IMPURE-TEXT WS-POINT END-POINT) or nil.
-IMPURE-TEXT is text from WS-POINT to END-POINT.
-WS-POINT is the location of the first non-whitespace character.
-Advances point to end of sexp."
-  (grab-next-sexp nil nil))
-
-(defun grab-next-pure-sexp ()
-  "Returns (list PURE-TEXT START-POINT END-POINT) or nil.
-PURE-TEXT is text from START-POINT to END-POINT.
-START-POINT is the location of the first non-whitespace character.
-Advances point to end of sexp."
-  (grab-next-sexp t nil))
-
-(defun grab-next-sexp/require-pure ()
-  "Returns (list PURE-TEXT START-POINT END-POINT) or nil.
-PURE-TEXT is text from START-POINT to END-POINT.  START-POINT is
-the location of the first non-whitespace character, which must
-also be the start of the sexp.  Advances point to end of sexp."
-  (grab-next-sexp t t))
-
-(defun grab-next-sexp (pure require-pure)
-  "Returns (list TEXT START-POINT END-POINT) or nil.
+(defun sexprw-grab-next-sexp (pure require-pure)
+  "Returns (list TEXT ONELINEP RECT START-POINT END-POINT) or nil.
 TEXT is text from START-POINT to END-POINT.  If PURE is non-nil,
 then START-POINT is taken as the start of the sexp; otherwise, it
 is the first non-whitespace character.  If REQUIRE-PURE is
 non-nil, then there must be no non-whitespace characters before
-the start of the sexp, or else nil is returned.  Advances point
-to end of sexp."
-  (let ((result (grab-next-sexp-range)))
+the start of the sexp, or else nil is returned.  ONELINEP
+indicates if START and END are on the same line.  If RECT is not
+nil, START to END was rectangular, and RECT is a list of trimmed
+strings.  Advances point to end of sexp."
+  (let ((result (sexprw-grab-next-sexp-range)))
     (and result
-         (or (not require-pure) (equal (nth 1 result) (nth 2 result)))
+         (or (not require-pure)
+             (equal (nth 1 result) (nth 2 result)))
          (let ((start (if pure (nth 2 result) (nth 1 result)))
                (end (nth 3 result)))
            (goto-char end)
            (list (filter-buffer-substring start end)
+                 (= (line-number-at-pos start)
+                    (line-number-at-pos end))
+                 (sexprw-rectangle start end)
                  start
                  end)))))
 
-(defun grab-next-sexp-range ()
+(defun sexprw-rectangle (start end)
+  "Returns list of lines from START to END if rectangular, otherwise nil.
+Region is rectangular if first non-space char on each line is at
+column at least column of START. Interpret with newline after
+every line except last."
+  (interactive "r")
+  (let ((ok t)
+        (rtext nil))
+    (save-excursion
+      (save-restriction
+        (widen)
+        (goto-char start)
+        (forward-line 0)
+        (let ((first-column (- start (point))))
+          ;; (message "rect: first column is %S" first-column)
+          (push (filter-buffer-substring start (min (line-end-position) end)) rtext)
+          (forward-line 1)
+          (while (and ok (< (point) end))
+            ;; (message "rect: point is %S" (point))
+            (let* ((line-end (min (line-end-position) end))
+                   (col (min (+ (point) first-column) line-end)))
+              (if (string-match "^ *$" (filter-buffer-substring (point) col))
+                  (push (filter-buffer-substring col line-end) rtext)
+                (setq ok nil)))
+            (forward-line 1))))
+      (and ok (reverse rtext)))))
+
+(defun sexprw-grab-next-sexp-range ()
   ;; FIXME/BUG: backwards scan loses things like quote prefix, 
   ;; can lead to treating "'x" as atomic sexp (shouldn't be).
   ;; Maybe add custom comment handling to avoid backwards scan?
@@ -728,8 +736,10 @@ guard body."
 ;;     | (REP vars T*)   ; NOTE: splicing repetition, to allow eg
 ;;     |                 ; (REP <vars> expr NL) vars is pvars to map over
 ;;
-;; PreOutput = (treeof (U string 'SP 'NL 'NONE))
+;; PreOutput = (treeof (U string 'SP 'NL 'NONE (cons 'RECT listofstring)))
 ;; Interpret PreOutput left to right; *last* spacing symbol to occur wins.
+;;
+;; Output = (listof (U string 'NL (cons 'RECT listofstring)))
 
 (defun sexprw-template (template env)
   "Interprets TEMPLATE using the pattern variables of ENV.
@@ -823,7 +833,10 @@ Returns a list of strings and latent spacing symbols ('SP and 'NL)."
              (list (cadr value) 'SP))
             ((and (consp value) (eq (car value) 'block))
              (list (if (nth 2 value) nil 'NL) ; FIXME: tweak?
-                   (nth 1 value)
+                   (let ((rect (nth 3 value)))
+                     (if rect
+                         (cons 'RECT rect)
+                       (nth 1 value)))
                    (if (nth 2 value) 'SP 'NL)))
             ((and (consp value) (eq (car value) 'rep))
              (error "Depth error for pvar '%s'; value is: %S" pvar value))
@@ -841,14 +854,18 @@ Returns a list of strings and latent spacing symbols ('SP and 'NL)."
   (let* ((result (sexprw-output* pre nil 'NONE))
          (raccum (car result))
          (latent (cdr result)))
-    (apply #'concat (reverse raccum))))
+    (reverse raccum)))
 
 (defun sexprw-output* (pre raccum latent)
-  (cond ((consp pre)
+  (cond ((and (consp pre) (eq (car pre) 'RECT))
+         (let* ((raccum (cons (sexprw-output*-spacing latent) raccum))
+                (raccum (cons pre raccum)))
+           (cons raccum 'NONE)))
+        ((consp pre)
          (let ((result (sexprw-output* (car pre) raccum latent)))
            (sexprw-output* (cdr pre) (car result) (cdr result))))
         ((stringp pre)
-         (let* ((raccum (cons (sexprw-spacing-to-string latent) raccum))
+         (let* ((raccum (cons (sexprw-output*-spacing latent) raccum))
                 (raccum (cons pre raccum)))
            (cons raccum 'NONE)))
         ((null pre)
@@ -858,11 +875,30 @@ Returns a list of strings and latent spacing symbols ('SP and 'NL)."
         (t
          (error "Bad pre-output: %S" pre))))
 
-(defun sexprw-spacing-to-string (spacing)
-  (cond ((eq spacing 'NL) "\n")
+(defun sexprw-output*-spacing (spacing)
+  (cond ((eq spacing 'NL) 'NL)
         ((eq spacing 'SP) " ")
         ((eq spacing 'NONE) "")
         (t (error "Bad spacing: %S" spacing))))
+
+(defun sexprw-emit (output)
+  (while output
+    (let ((fragment (car output)))
+      (setq output (cdr output))
+      (cond ((eq fragment 'NL)
+             (newline-and-indent))
+            ((stringp fragment)
+             (insert fragment))
+            ((and (consp fragment) (eq (car fragment) 'RECT))
+             (let ((strings (cdr fragment))
+                   (col (- (point) (line-beginning-position))))
+               (while strings
+                 (insert (car strings))
+                 (setq strings (cdr strings))
+                 (when (consp strings)
+                   (insert "\n")
+                   (indent-to col)))))
+            (t (error "Bad output: %S" (car output)))))))
 
 
 ;; ============================================================
@@ -940,6 +976,10 @@ Returns a list of strings and latent spacing symbols ('SP and 'NL)."
            (message "Pattern not found")))))
 
 (defun sexprw-move-forward ()
+  "Moves point forward along sexp boundaries.
+Can move forward by skipping whitespace, moving to start of next
+sexp, moving to end of next sexp, moving into list, or moving out
+of list."
   (let* ((init-point (point))
          (next-sexp-end (ignore-errors (scan-sexps init-point 1)))
          (next-sexp-start (and next-sexp-end
