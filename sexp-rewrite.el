@@ -83,6 +83,7 @@ for more details.")
 (define-key sexprw-mode-keymap "[" 'sexprw-squarify)
 
 (define-key sexprw-mode-keymap "k" 'sexprw-kill-next-rectangular-sexp)
+(define-key sexprw-mode-keymap "w" 'sexprw-kill-rectangular-region)
 (define-key sexprw-mode-keymap "y" 'sexprw-yank-rectangular-sexp)
 
 (define-key sexprw-mode-keymap (kbd "r e")
@@ -617,7 +618,6 @@ strings.  Advances point to end of sexp."
 Region is rectangular if first non-space char on each line is at
 column at least column of START. Interpret with newline after
 every line except last."
-  (interactive "r")
   (let ((ok t)
         (rtext nil))
     (save-excursion
@@ -625,12 +625,13 @@ every line except last."
         (widen)
         (goto-char start)
         (forward-line 0)
-        (let ((first-column (- start (point))))
+        (let ((first-column (- start (point)))
+              (last-point (point)))
           ;; (message "rect: first column is %S" first-column)
           (push (filter-buffer-substring start (min (line-end-position) end)) rtext)
           (forward-line 1)
-          (while (and ok (< (point) end))
-            ;; (message "rect: point is %S" (point))
+          (while (and ok (<= (point) end) (> (point) last-point))
+            (setq last-point (point))
             (let* ((line-end (min (line-end-position) end))
                    (col (min (+ (point) first-column) line-end)))
               (if (string-match "^ *$" (filter-buffer-substring (point) col))
@@ -1009,43 +1010,64 @@ of list."
            (progn (ignore-errors (down-list 1)) (> (point) init-point))))))
 
 ;; ============================================================
+;; Rectangular kill and yank
 
-
-;; FIXME: use regular kill-ring instead,
-;; just split for newlines?
-
-(defvar sexprw-rectangular-sexp-last-kill nil)
+;; The following functions are useful for "rectangular" code and
+;; text. A region of text is rectangular if every line but the first
+;; is indented to start at or after the column of the start of the
+;; region. (There's no constraint on the end; perhaps
+;; "semi-rectangular" is a more precise term.) Well-formatted
+;; Lisp/Scheme/Racket code is nearly always rectangular, with the
+;; occasional exception of multi-line string literals.
 
 (defun sexprw-kill-next-rectangular-sexp ()
+  "Kills the sexp at point, preserving relative indentation.
+The sexp must be rectangular. Whitespace is removed from lines
+after the first so the sexp will be properly indented when
+`yank'ed at column 0 or yanked via `sexprw-yank-rectangular'."
   (interactive)
   (let* ((init-point (point))
          (next (sexprw-grab-next-sexp t t)))
-    (cond (next
-           (let ((rect (nth 2 next))
-                 (start (nth 3 next))
-                 (end (nth 4 next)))
-             (cond (rect
-                    (setq sexprw-rectangular-sexp-kill-ring 
-                          (cons 'rect rect))
-                    (delete-and-extract-region init-point end)
-                    t)
-                   (t (error "Non-rectangular sexp at point")))))
-          (t (error "No sexp at point")))))
+    (unless next
+      (error "No sexp at point"))
+    (let ((rect (nth 2 next))
+          (end (nth 4 next)))
+      (unless rect
+        (error "Non-rectangular sexp at point"))
+      (let ((text (mapconcat 'identity rect "\n")))
+        (delete-and-extract-region init-point end)
+        (kill-new text)))))
 
-(defun sexprw-yank-rectangular-sexp ()
+(defun sexprw-kill-rectangular-region (start end)
+  "Kills from START to END, preserving relative indentation.
+The region must be rectangular. Whitespace is removed from lines
+after the first so the sexp will be properly indented when
+`yank'ed at column 0 or yanked via `sexprw-yank-rectangular'."
+  (interactive "r")
+  (let ((rect (sexprw-rectangle start end)))
+    (message "rect = %S" rect)
+    (unless rect 
+      (error "Non-rectangular region"))
+    (let ((text (mapconcat 'identity rect "\n")))
+      (delete-and-extract-region start end)
+      (kill-new text))))
+
+(defun sexprw-yank-rectangular ()
+  "Yanks text, preserving relative indentation of multi-line text.
+Whitespace is added to lines after the first so each line starts
+at the same column as the first line."
   (interactive)
-  (cond (sexprw-rectangular-sexp-kill-ring
-         (let ((col (- (point) (line-beginning-position)))
-               (strings (cdr sexprw-rectangular-sexp-kill-ring)))
-           (while strings
-             (insert (car strings))
-             (setq strings (cdr strings))
-             (when (consp strings)
-               (insert "\n")
-               (indent-to col))))
-         ;; (setq sexprw-rectangular-sexp-kill-ring nil))
-         t)
-        (t (error "No killed rectangular-sexp available"))))
+  (let ((text (current-kill 0))
+        (col (- (point) (line-beginning-position))))
+    (unless text
+      (error "No text in kill ring"))
+    (let ((strings (split-string text "[\n]" nil)))
+      (while strings
+        (insert (car strings))
+        (setq strings (cdr strings))
+        (when (consp strings)
+          (insert "\n")
+          (indent-to col))))))
 
 ;; ============================================================
 
