@@ -82,6 +82,9 @@ for more details.")
 (define-key sexprw-mode-keymap "s" 'sexprw-search-pattern)
 (define-key sexprw-mode-keymap "[" 'sexprw-squarify)
 
+(define-key sexprw-mode-keymap "k" 'sexprw-kill-next-rectangular-sexp)
+(define-key sexprw-mode-keymap "y" 'sexprw-yank-rectangular-sexp)
+
 (define-key sexprw-mode-keymap (kbd "r e")
   (lambda () (interactive) (sexprw-auto-expression 100)))
 (define-key sexprw-mode-keymap (kbd "r d")
@@ -1004,6 +1007,45 @@ of list."
           (t
            ;; (message "Going down")
            (progn (ignore-errors (down-list 1)) (> (point) init-point))))))
+
+;; ============================================================
+
+
+;; FIXME: use regular kill-ring instead,
+;; just split for newlines?
+
+(defvar sexprw-rectangular-sexp-last-kill nil)
+
+(defun sexprw-kill-next-rectangular-sexp ()
+  (interactive)
+  (let* ((init-point (point))
+         (next (sexprw-grab-next-sexp t t)))
+    (cond (next
+           (let ((rect (nth 2 next))
+                 (start (nth 3 next))
+                 (end (nth 4 next)))
+             (cond (rect
+                    (setq sexprw-rectangular-sexp-kill-ring 
+                          (cons 'rect rect))
+                    (delete-and-extract-region init-point end)
+                    t)
+                   (t (error "Non-rectangular sexp at point")))))
+          (t (error "No sexp at point")))))
+
+(defun sexprw-yank-rectangular-sexp ()
+  (interactive)
+  (cond (sexprw-rectangular-sexp-kill-ring
+         (let ((col (- (point) (line-beginning-position)))
+               (strings (cdr sexprw-rectangular-sexp-kill-ring)))
+           (while strings
+             (insert (car strings))
+             (setq strings (cdr strings))
+             (when (consp strings)
+               (insert "\n")
+               (indent-to col))))
+         ;; (setq sexprw-rectangular-sexp-kill-ring nil))
+         t)
+        (t (error "No killed rectangular-sexp available"))))
 
 ;; ============================================================
 
