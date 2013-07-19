@@ -84,7 +84,7 @@ for more details.")
 
 (define-key sexprw-mode-keymap "k" 'sexprw-kill-next-rectangular-sexp)
 (define-key sexprw-mode-keymap "w" 'sexprw-kill-rectangular-region)
-(define-key sexprw-mode-keymap "y" 'sexprw-yank-rectangular-sexp)
+(define-key sexprw-mode-keymap "y" 'sexprw-yank-rectangular)
 
 (define-key sexprw-mode-keymap (kbd "r e")
   (lambda () (interactive) (sexprw-auto-expression 100)))
@@ -1061,7 +1061,7 @@ at the same column as the first line."
   (let ((col (- (point) (line-beginning-position))))
     (while rect
       (insert (car rect))
-      (setq (cdr rect))
+      (setq rect (cdr rect))
       (when (consp rect)
         (insert "\n")
         (indent-to col)))))
