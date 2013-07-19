@@ -8,7 +8,8 @@ Some examples of "pattern-based rewriting" are:
 
  - Turn a chain of `if` expressions into a `cond` expression.
 
- - Rewrite an application of `map` with `lambda` to `for/list`---or `andmap` to `for/and`, etc.
+ - Rewrite an application of `map` with `lambda` to `for/list`---or
+   `andmap` to `for/and`, etc.
 
  - Turn a `letrec` into a sequence of internal definitions.
 
@@ -67,3 +68,17 @@ the tactics applied to make sure they don't break your code.
 ## How to define tactics
 
 To be continued.
+
+## Other features
+
+Type `C-c C-d s` or `M-x sexprw-search-pattern` to search forward for
+sexps matching a given pattern.
+
+Type `C-c C-d [` or `M-x sexprw-squarify` to convert round parentheses
+into square brackets.
+
+## Known bugs and limitations
+
+This library has a very vague notion of sexp syntax. Notions like
+improper lists are not supported, and `.` is treated as an
+atom. Reader abbreviations like `'` for `quote` are not recognized.
