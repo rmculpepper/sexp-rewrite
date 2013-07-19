@@ -26,7 +26,6 @@ for more details.")
 ;; TO DO
 
 ;; short term
-;; - code cleanup, namespacing, etc
 ;; - make sure sugared pattern lang is complete for core pattern lang
 ;; - automated testing
 ;; - documentation, rationale, etc
@@ -100,7 +99,7 @@ for more details.")
 (defvar sexprw-pattern-history nil)
 (defvar sexprw-template-history nil)
 
-(defgroup sexp-rewrite-group nil
+(defgroup sexprw-group nil
   "Customization options for sexp-rewrite."
   :group 'scheme)
 
@@ -109,7 +108,7 @@ for more details.")
 Affects only `sexprw-auto-expression' and `sexprw-auto-definition';
 disabled tactics can still be run via `sexprw-execute-tactic', etc."
   :type '(repeat symbol)
-  :group 'sexp-rewrite-group)
+  :group 'sexprw-group)
 
 (defun sexprw-disable-tactic (tactic-name)
   (interactive
@@ -132,15 +131,6 @@ Customizable via the variable `sexprw-auto-expression-tactics'."
 Customizable via the variable `sexprw-auto-definition-tactics'."
   (interactive "p")
   (sexprw-execute-tactics sexprw-auto-definition-tactics times t))
-
-(defun sexprw-read-tactic-from-minibuffer (&optional prompt history)
-  (intern
-   (completing-read (or prompt "Tactic: ")
-                    obarray
-                    'sexprw-tactic-symbolp
-                    t
-                    nil
-                    (or history 'sexprw-tactic-symbolp))))
 
 (defun sexprw-execute-tactic (tactic-name &optional times0)
   "Read sexprw-rewrite tactic, then try to execute it."
@@ -188,6 +178,12 @@ Customizable via the variable `sexprw-auto-definition-tactics'."
 
 ;; sexp-rewrite tactic names have property 'sexprw-tactic
 
+(defmacro define-sexprw-tactic (name tactic)
+  "Define NAME as a sexp-rewrite tactic specified by TACTIC."
+  (unless (and name (symbolp name))
+    (error "define-sexprw-tactic: expected symbol for NAME, got: %S" name))
+  `(progn (put ',name 'sexprw-tactic (lambda () ,tactic)) ',name))
+
 (defun sexprw-tactic-symbolp (sym)
   (and (get sym 'sexprw-tactic) t))
 
@@ -195,23 +191,50 @@ Customizable via the variable `sexprw-auto-definition-tactics'."
   (or (and (symbolp sym) (get sym 'sexprw-tactic))
       (error "Not a sexp-rewrite tactic name: %S" sym)))
 
-(defmacro define-sexprw-tactic (name tactic)
-  "Define NAME as a sexp-rewrite tactic specified by TACTIC."
-  (unless (and name (symbolp name))
-    (error "define-sexprw-tactic: expected symbol for NAME, got: %S" name))
-  `(progn (put ',name 'sexprw-tactic (lambda () ,tactic)) ',name))
+(defun sexprw-read-tactic-from-minibuffer (&optional prompt history)
+  (intern
+   (completing-read (or prompt "Tactic: ")
+                    obarray
+                    'sexprw-tactic-symbolp
+                    t
+                    nil
+                    (or history 'sexprw-tactic-symbolp))))
 
 ;; ============================================================
-;; Entry points
+;; Debugging and diagnostics
+
+(defvar sexprw-current-tactic nil
+  "Name of currently executing tactic.")
+
+(defvar sexprw-failure-info nil
+  "Information about last tactic failure(s).")
+
+(defun sexprw-fail (info)
+  (push (cons sexprw-current-tactic (cons (point) info)) sexprw-failure-info)
+  nil)
+
+(defun sexprw-show-failure-info ()
+  (interactive)
+  (message "%S" sexprw-failure-info))
+
+(put 'sexprw-template-error
+     'error-conditions
+     '(error sexprw-template-error))
+(put 'sexprw-template-error
+     'error-message
+     "Error instantiating template")
+
+;; ============================================================
+;; Rewriting
 
 (defun sexprw-rewrite (pattern template &optional guard)
   (interactive
    (list 
     (read-from-minibuffer "Pattern: " nil nil t 'sexprw-pattern-history)
     (read-from-minibuffer "Template: " nil nil t 'sexprw-template-history)))
-  ;; (message "parsed pattern = %S" (desugar-pattern pattern nil 0))
-  (sexprw-rewrite/ast (desugar-pattern pattern nil 0)
-                      (desugar-pattern template t 0)
+  ;; (message "parsed pattern = %S" (sexprw-desugar-pattern pattern nil 0))
+  (sexprw-rewrite/ast (sexprw-desugar-pattern pattern nil 0)
+                      (sexprw-desugar-pattern template t 0)
                       guard))
 
 (defun sexprw-rewrite/ast (pattern template &optional guard)
@@ -270,30 +293,6 @@ Customizable via the variable `sexprw-auto-definition-tactics'."
     ok))
 
 ;; ============================================================
-;; Debugging and diagnostics
-
-(defvar sexprw-current-tactic nil
-  "Name of currently executing tactic.")
-
-(defvar sexprw-failure-info nil
-  "Information about last tactic failure(s).")
-
-(defun sexprw-fail (info)
-  (push (cons sexprw-current-tactic (cons (point) info)) sexprw-failure-info)
-  nil)
-
-(defun sexprw-show-failure-info ()
-  (interactive)
-  (message "%S" sexprw-failure-info))
-
-(put 'sexprw-template-error
-     'error-conditions
-     '(error sexprw-template-error))
-(put 'sexprw-template-error
-     'error-message
-     "Error instantiating template")
-
-;; ============================================================
 ;; Pretty patterns and templates
 
 ;; PP ::= symbol         ~ (quote symbol)
@@ -313,7 +312,7 @@ Customizable via the variable `sexprw-auto-definition-tactics'."
 ;;      | (!REP PT vars) ~ (REP T vars)
 ;;      | PT ...         ~ (REP T nil)         ; vars=nil means "auto"
 
-(defun desugar-pattern (pretty template upto)
+(defun sexprw-desugar-pattern (pretty template upto)
   (cond ((null pretty)
          '(LIST))
         ((symbolp pretty)
@@ -340,14 +339,14 @@ Customizable via the variable `sexprw-auto-definition-tactics'."
         ((not (consp pretty))
          (error "Bad %s: %s" (if template "template" "pattern") pretty))
         ((memq (car pretty) '(!@ !SPLICE))
-         (cons 'SPLICE (desugar-pattern-list (cdr pretty) template upto)))
+         (cons 'SPLICE (sexprw-desugar-pattern-list (cdr pretty) template upto)))
         ((eq (car pretty) '!SQ)
          (if template
-             (cons 'SQLIST (desugar-pattern-list (cdr pretty) template upto))
+             (cons 'SQLIST (sexprw-desugar-pattern-list (cdr pretty) template upto))
              (error "Bad pattern (!SQ not allowed): %S" pretty)))
         ((eq (car pretty) '!REP)
          (list 'REP
-               (desugar-pattern (nth 1 pretty) template upto)
+               (sexprw-desugar-pattern (nth 1 pretty) template upto)
                (cond (template
                       (nth 2 pretty))
                      ;; pattern
@@ -359,9 +358,9 @@ Customizable via the variable `sexprw-auto-definition-tactics'."
                                pretty))
                       upto))))
         (t ; list
-         (cons 'LIST (desugar-pattern-list pretty template 0)))))
+         (cons 'LIST (sexprw-desugar-pattern-list pretty template 0)))))
 
-(defun desugar-pattern-list (pretty template upto)
+(defun sexprw-desugar-pattern-list (pretty template upto)
   (let ((rpretty (reverse pretty))
         (accum nil)
         (dots nil))
@@ -372,7 +371,7 @@ Customizable via the variable `sexprw-auto-definition-tactics'."
                (when dots (error "Repeated ellipses in pattern: %S" pretty))
                (setq dots t))
               (t
-               (let ((pp1 (desugar-pattern p1 template upto)))
+               (let ((pp1 (sexprw-desugar-pattern p1 template upto)))
                  (when dots
                    (setq dots nil)
                    (setq pp1 (list 'REP pp1 (if template nil upto))))
@@ -392,7 +391,7 @@ Customizable via the variable `sexprw-auto-definition-tactics'."
         (t 0)))
 
 ;; ============================================================
-;; Patterns
+;; Core patterns
 
 ;; P ::= (LIST P*)
 ;;     | (SPLICE P*)
@@ -428,10 +427,10 @@ Customizable via the variable `sexprw-auto-definition-tactics'."
   "^[-~!@$^&*_+=:./<>?a-zA-Z#0-9]+$")
 
 (defun sexprw-match (pattern)
-  "Matches the sexp starting at point against PATTERN, returning an
-\(list alist) mapping the pattern variables of PATTERN to
-fragments, or nil on failure.  Advances point to end of matched
-term(s)."
+  "Matches the sexp starting at point against core PATTERN,
+returning an \(list alist) mapping the pattern variables of
+PATTERN to fragments, or nil on failure.  Advances point to end
+of matched term(s)."
   ;; (message "matching (%S): %S" (point) pattern)
   (cond ((not (consp pattern))
          (error "Bad pattern: %s" pattern))
@@ -483,7 +482,7 @@ term(s)."
          (sexprw-skip-whitespace)
          (let ((init-point (point)))
            ;; (message "REST: init-point = %S" init-point)
-           (and (or (skip-forward-to-n-sexps-before-end (car args))
+           (and (or (sexprw-skip-forward-to-n-sexps-before-end (car args))
                     (sexprw-fail `(match var rest skip ,(car args))))
                 (list
                  (list (cons pvar
@@ -497,7 +496,7 @@ term(s)."
         (t (error "Bad pattern variable kind for pvar '%s': %s" pvar kind))))
 
 ;; returns t on success, nil if fewer than n sexps before end
-(defun skip-forward-to-n-sexps-before-end (n)
+(defun sexprw-skip-forward-to-n-sexps-before-end (n)
   (cond ((zerop n)
          (goto-char (point-max)))
         (t (let ((fast (point))
@@ -542,7 +541,7 @@ term(s)."
   (let ((raccum '())
         (proceed (point)))
     (save-restriction
-      (skip-forward-to-n-sexps-before-end upto)
+      (sexprw-skip-forward-to-n-sexps-before-end upto)
       (narrow-to-region proceed (point))
       (while proceed
         (goto-char proceed)
@@ -591,14 +590,17 @@ term(s)."
 
 (defun sexprw-grab-next-sexp (pure require-pure)
   "Returns (list TEXT ONELINEP RECT START-POINT END-POINT) or nil.
-TEXT is text from START-POINT to END-POINT.  If PURE is non-nil,
-then START-POINT is taken as the start of the sexp; otherwise, it
-is the first non-whitespace character.  If REQUIRE-PURE is
-non-nil, then there must be no non-whitespace characters before
-the start of the sexp, or else nil is returned.  ONELINEP
-indicates if START and END are on the same line.  If RECT is not
+TEXT is text from START-POINT to END-POINT. ONELINEP indicates if
+START-POINT and END-POINT are on the same line.  If RECT is not
 nil, START to END was rectangular, and RECT is a list of trimmed
-strings.  Advances point to end of sexp."
+strings.
+
+If PURE is non-nil, then START-POINT is taken as the start of the
+sexp; otherwise, it is the first non-whitespace character.  If
+REQUIRE-PURE is non-nil, then there must be no non-whitespace
+characters before the start of the sexp, or else nil is returned.
+
+Advances point to end of sexp."
   (let ((result (sexprw-grab-next-sexp-range)))
     (and result
          (or (not require-pure)
@@ -784,7 +786,7 @@ Returns a list of strings and latent spacing symbols ('SP and 'NL)."
           (signal 'template-error 'ellipsis-count-mismatch)))
       (let ((raccum '()))
         (dotimes (_i length1)
-          (let* ((extenv+vals (split/extend-env vars vals env))
+          (let* ((extenv+vals (sexprw-split/extend-env vars vals env))
                  (extenv (car extenv+vals)))
             (setq vals (cdr extenv+vals))
             (setq raccum 
@@ -792,7 +794,7 @@ Returns a list of strings and latent spacing symbols ('SP and 'NL)."
                         raccum))))
         (reverse raccum)))))
 
-(defun split/extend-env (vars vals env)
+(defun sexprw-split/extend-env (vars vals env)
   (let* ((val1s (mapcar #'car vals))
          (rests (mapcar #'cdr vals)))
     (while vars
@@ -923,7 +925,7 @@ Returns a list of strings and latent spacing symbols ('SP and 'NL)."
   (interactive
    (list (read-from-minibuffer "Search pattern: " nil nil t
                                'sexprw-pattern-history)))
-  (sexprw-search-pattern/ast (desugar-pattern pattern nil 0)))
+  (sexprw-search-pattern/ast (sexprw-desugar-pattern pattern nil 0)))
 
 (defun sexprw-search-pattern/ast (pattern)
   (let ((init-point (point))
@@ -994,7 +996,7 @@ every line except last."
         (rtext nil))
     (save-excursion
       (save-restriction
-        (widen)
+        (widen)  ;; else may get wrong column number
         (goto-char start)
         (forward-line 0)
         (let ((first-column (- start (point)))
@@ -1011,15 +1013,6 @@ every line except last."
                 (setq ok nil)))
             (forward-line 1))))
       (and ok (reverse rtext)))))
-
-(defun sexprw-emit-rectangle (rect)
-  (let ((col (- (point) (line-beginning-position))))
-    (while rect
-      (insert (car rect))
-      (setq (cdr rect))
-      (when (consp rect)
-        (insert "\n")
-        (indent-to col)))))
 
 (defun sexprw-kill-next-rectangular-sexp ()
   "Kills the sexp at point, preserving relative indentation.
@@ -1063,6 +1056,15 @@ at the same column as the first line."
     (unless text
       (error "No text in kill ring"))
     (sexprw-emit-rectangle (split-string text "[\n]" nil))))
+
+(defun sexprw-emit-rectangle (rect)
+  (let ((col (- (point) (line-beginning-position))))
+    (while rect
+      (insert (car rect))
+      (setq (cdr rect))
+      (when (consp rect)
+        (insert "\n")
+        (indent-to col)))))
 
 ;; ============================================================
 
