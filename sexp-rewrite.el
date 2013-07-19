@@ -305,6 +305,7 @@ Customizable via the variable `sexprw-auto-definition-tactics'."
 ;;      | (!SPLICE PP*)  ~ (SPLICE P*)
 ;;      | (!REP PP)      ~ (REP P 0)
 ;;      | PP ...         ~ (REP P n)           ; n is # patterns that follow
+;;      | (!OR PP*)      ~ (OR P*)
 
 ;; PT ::= like PP, with following additions and replacements:
 ;;      | (!SQ PT*)      ~ (SQLIST T*)
@@ -325,7 +326,7 @@ Customizable via the variable `sexprw-auto-definition-tactics'."
                  ((eq pretty '...)
                   (error "Misplaced ellipses: %S" pretty))
                  ((string-match "^[!]" name)
-                  (error "Bad symbol in %s: %S"
+                  (error "Bad symbol in %s (reserved): %S"
                          (if template "template" "pattern")
                          pretty))
                  ((string-match "^[$][[:alpha:]].*" name)
@@ -338,7 +339,7 @@ Customizable via the variable `sexprw-auto-definition-tactics'."
                   `(VAR ,pretty ,@(if template '() `(REST ,upto))))
                  (t `(quote ,pretty)))))
         ((not (consp pretty))
-         (error "Bad %s: %s" (if template "template" "pattern") pretty))
+         (error "Bad %s: %S" (if template "template" "pattern") pretty))
         ((memq (car pretty) '(!@ !SPLICE))
          (cons 'SPLICE (sexprw-desugar-pattern-list (cdr pretty) template upto)))
         ((eq (car pretty) '!SQ)
@@ -358,10 +359,17 @@ Customizable via the variable `sexprw-auto-definition-tactics'."
                         (error "Patterns of unknown size follow !REP pattern: %S"
                                pretty))
                       upto))))
+        ((eq (car pretty) '!OR)
+         (if template
+             (error "Bad template (!OR not allowed): %S" pretty)
+           (cons 'OR
+                 (mapcar (lambda (p) (sexprw-desugar-pattern p template upto))
+                         (cdr pretty)))))
         (t ; list
          (cons 'LIST (sexprw-desugar-pattern-list pretty template 0)))))
 
 (defun sexprw-desugar-pattern-list (pretty template upto)
+  ;; Note: *not* same as (mapcar sexprw-desugar-pattern ....)
   (let ((rpretty (reverse pretty))
         (accum nil)
         (dots nil))
@@ -399,6 +407,7 @@ Customizable via the variable `sexprw-auto-definition-tactics'."
 ;;     | (quote symbol)
 ;;     | (VAR symbol VariableKind)
 ;;     | (REP P n)
+;;     | (OR P*)
 ;;
 ;; VariableKind ::= SYM       ; symbol
 ;;                | PURE-SEXP ; next sexp, require no preceding comments
@@ -456,6 +465,19 @@ of matched term(s)."
          (sexprw-match-list-contents (cdr pattern)))
         ((eq (car pattern) 'REP)
          (sexprw-match-rep (nth 1 pattern) (nth 2 pattern)))
+        ((eq (car pattern) 'OR)
+         (let ((init-point (point))
+               (result nil)
+               (rfailinfos nil)
+               (alternatives (cdr pattern)))
+           (while (and (consp alternatives) (not result))
+             (goto-char init-point)
+             (let ((sexprw-failure-info nil)) ;; fluid-let
+               (setq result (sexprw-match (car alternatives)))
+               (push sexprw-failure-info rfailinfos))
+             (setq alternatives (cdr alternatives)))
+           (or result
+               (sexprw-fail `(match or inners= ,(reverse rfailinfos))))))
         (t (error "Bad pattern: %S" pattern))))
 
 (defun sexprw-match-var (pvar kind args)
@@ -555,29 +577,25 @@ of matched term(s)."
                    (setq proceed nil))))))
       (list (sexprw-reverse-merge-alists inner raccum)))))
 
+;; FIXME: quadratic
 (defun sexprw-reverse-merge-alists (inner alists)
-  (cond ((consp alists)
-         (let ((alist1 (car alists))
-               (accum '()))
-           (dolist (entry alist1)
-             (let ((key (car entry))
-                   (values '()))
-               (dolist (alist alists)
-                 (setq values (cons (cdr (assq key alist)) values)))
-               (setq accum (cons (cons key (cons 'rep values)) accum))))
-           (reverse accum)))
-        (t
-         ;; Need to build alist of pattern variables of inner.
-         (let (accum '())
-           (dolist (pvar (sexprw-pattern-variables inner '()))
-             (setq accum (cons (cons pvar '(rep)) accum)))
-           (reverse accum)))))
+  ;; Not every key might appear in every alist, due to OR patterns.
+  (let ((keys (delete-dups (sexprw-pattern-variables inner nil)))
+        (accum nil))
+    (dolist (key keys)
+      (let ((values nil))
+        (dolist (alist alists)
+          (let ((kv (assq key alist)))
+            (when kv (push (cdr kv) values))))
+        ;; Don't reverse values; thus "reverse merge" alists
+        (push (cons key (cons 'rep values)) accum)))
+    accum))
 
 (defun sexprw-pattern-variables (pattern onto)
   ;; Accept templates too
   (cond ((eq (car pattern) 'VAR)
          (cons (nth 1 pattern) onto))
-        ((memq (car pattern) '(LIST SPLICE SQLIST))
+        ((memq (car pattern) '(LIST SPLICE SQLIST OR))
          (dolist (inner (cdr pattern))
            (setq onto (sexprw-pattern-variables inner onto)))
          onto)
