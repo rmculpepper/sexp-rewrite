@@ -613,33 +613,6 @@ strings.  Advances point to end of sexp."
                  start
                  end)))))
 
-(defun sexprw-rectangle (start end)
-  "Returns list of lines from START to END if rectangular, otherwise nil.
-Region is rectangular if first non-space char on each line is at
-column at least column of START. Interpret with newline after
-every line except last."
-  (let ((ok t)
-        (rtext nil))
-    (save-excursion
-      (save-restriction
-        (widen)
-        (goto-char start)
-        (forward-line 0)
-        (let ((first-column (- start (point)))
-              (last-point (point)))
-          ;; (message "rect: first column is %S" first-column)
-          (push (filter-buffer-substring start (min (line-end-position) end)) rtext)
-          (forward-line 1)
-          (while (and ok (<= (point) end) (> (point) last-point))
-            (setq last-point (point))
-            (let* ((line-end (min (line-end-position) end))
-                   (col (min (+ (point) first-column) line-end)))
-              (if (string-match "^ *$" (filter-buffer-substring (point) col))
-                  (push (filter-buffer-substring col line-end) rtext)
-                (setq ok nil)))
-            (forward-line 1))))
-      (and ok (reverse rtext)))))
-
 (defun sexprw-grab-next-sexp-range ()
   ;; FIXME/BUG: backwards scan loses things like quote prefix, 
   ;; can lead to treating "'x" as atomic sexp (shouldn't be).
@@ -894,16 +867,8 @@ Returns a list of strings and latent spacing symbols ('SP and 'NL)."
             ((stringp fragment)
              (insert fragment))
             ((and (consp fragment) (eq (car fragment) 'RECT))
-             (let ((strings (cdr fragment))
-                   (col (- (point) (line-beginning-position))))
-               (while strings
-                 (insert (car strings))
-                 (setq strings (cdr strings))
-                 (when (consp strings)
-                   (insert "\n")
-                   (indent-to col)))))
+             (sexprw-emit-rectangle (cdr fragment)))
             (t (error "Bad output: %S" (car output)))))))
-
 
 ;; ============================================================
 ;; Convert to square brackets
@@ -1020,6 +985,42 @@ of list."
 ;; Lisp/Scheme/Racket code is nearly always rectangular, with the
 ;; occasional exception of multi-line string literals.
 
+(defun sexprw-rectangle (start end)
+  "Returns list of lines from START to END if rectangular, otherwise nil.
+Region is rectangular if first non-space char on each line is at
+column at least column of START. Interpret with newline after
+every line except last."
+  (let ((ok t)
+        (rtext nil))
+    (save-excursion
+      (save-restriction
+        (widen)
+        (goto-char start)
+        (forward-line 0)
+        (let ((first-column (- start (point)))
+              (last-point (point)))
+          ;; (message "rect: first column is %S" first-column)
+          (push (filter-buffer-substring start (min (line-end-position) end)) rtext)
+          (forward-line 1)
+          (while (and ok (<= (point) end) (> (point) last-point))
+            (setq last-point (point))
+            (let* ((line-end (min (line-end-position) end))
+                   (col (min (+ (point) first-column) line-end)))
+              (if (string-match "^ *$" (filter-buffer-substring (point) col))
+                  (push (filter-buffer-substring col line-end) rtext)
+                (setq ok nil)))
+            (forward-line 1))))
+      (and ok (reverse rtext)))))
+
+(defun sexprw-emit-rectangle (rect)
+  (let ((col (- (point) (line-beginning-position))))
+    (while rect
+      (insert (car rect))
+      (setq (cdr rect))
+      (when (consp rect)
+        (insert "\n")
+        (indent-to col)))))
+
 (defun sexprw-kill-next-rectangular-sexp ()
   "Kills the sexp at point, preserving relative indentation.
 The sexp must be rectangular. Whitespace is removed from lines
@@ -1061,13 +1062,7 @@ at the same column as the first line."
         (col (- (point) (line-beginning-position))))
     (unless text
       (error "No text in kill ring"))
-    (let ((strings (split-string text "[\n]" nil)))
-      (while strings
-        (insert (car strings))
-        (setq strings (cdr strings))
-        (when (consp strings)
-          (insert "\n")
-          (indent-to col))))))
+    (sexprw-emit-rectangle (split-string text "[\n]" nil))))
 
 ;; ============================================================
 
