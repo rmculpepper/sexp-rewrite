@@ -306,6 +306,7 @@ Customizable via the variable `sexprw-auto-definition-tactics'."
 ;;      | (!REP PP)      ~ (REP P 0)
 ;;      | PP ...         ~ (REP P n)           ; n is # patterns that follow
 ;;      | (!OR PP*)      ~ (OR P*)
+;;      | (!AND PP*)     ~ (AND P*)
 
 ;; PT ::= like PP, with following additions and replacements:
 ;;      | (!SQ PT*)      ~ (SQLIST T*)
@@ -363,8 +364,17 @@ Customizable via the variable `sexprw-auto-definition-tactics'."
          (if template
              (error "Bad template (!OR not allowed): %S" pretty)
            (cons 'OR
-                 (mapcar (lambda (p) (sexprw-desugar-pattern p template upto))
+                 (mapcar (lambda (p) (sexprw-desugar-pattern p nil upto))
                          (cdr pretty)))))
+        ((eq (car pretty) '!AND)
+         (if template
+             (error "Bad template (!AND not allowed): %S" pretty)
+           (cons 'AND
+                 (if (consp (cdr pretty))
+                     (cons (sexprw-desugar-pattern (cadr pretty) nil upto)
+                           (mapcar (lambda (p) (sexprw-desugar-pattern p nil 0))
+                                   (cddr pretty)))
+                   nil))))
         (t ; list
          (cons 'LIST (sexprw-desugar-pattern-list pretty template 0)))))
 
@@ -397,6 +407,8 @@ Customizable via the variable `sexprw-auto-definition-tactics'."
          1)
         ((eq (car p) 'SPLICE)
          (apply #'+ (mapcar #'sexprw-pattern-min-size (cdr p))))
+        ((memq (car p) '(AND OR))
+         (apply #'min (mapcar #'sexprw-pattern-min-size (cdr p))))
         (t 0)))
 
 ;; ============================================================
@@ -407,6 +419,7 @@ Customizable via the variable `sexprw-auto-definition-tactics'."
 ;;     | (quote symbol)
 ;;     | (VAR symbol VariableKind)
 ;;     | (REP P n)
+;;     | (AND P*)
 ;;     | (OR P*)
 ;;
 ;; VariableKind ::= SYM       ; symbol
@@ -478,6 +491,31 @@ of matched term(s)."
              (setq alternatives (cdr alternatives)))
            (or result
                (sexprw-fail `(match or inners= ,(reverse rfailinfos))))))
+        ((eq (car pattern) 'AND)
+         (let ((init-point (point))
+               (renvs nil)
+               (ok t)
+               (first-time t)
+               (conjuncts (cdr pattern)))
+           ;; Use restriction and looking-at (below) to ensure that
+           ;; all conjuncts match the same sexps.
+           ;; In other words, first conjunct constrains what
+           ;; subsequent conjuncts can see.
+           (save-restriction
+             (while (and ok (consp conjuncts))
+               (goto-char init-point)
+               (let ((result (sexprw-match (car conjuncts))))
+                 (cond ((and result
+                             (or first-time
+                                 (looking-at
+                                  (concat sexprw-all-whitespace-re "\\'"))))
+                        (setq first-time nil)
+                        (push (car result) renvs)
+                        (narrow-to-region init-point (point)))
+                       (t
+                        (setq ok nil))))
+               (setq conjuncts (cdr conjuncts)))
+             (and ok (list (apply #'append (reverse renvs)))))))
         (t (error "Bad pattern: %S" pattern))))
 
 (defun sexprw-match-var (pvar kind args)

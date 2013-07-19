@@ -285,8 +285,8 @@
 (define-sexprw-tactic splice-letrec
   ;; Unsafe, changes scope of $names
   (sexprw-rewrite
-   '(letrec ((!REP ($name %rhs))) %%body)
-   '(!@ (!REP (define $name !NL %rhs) !NL) %%body)))
+   '(letrec (($name %rhs) ...) %%body)
+   '(!@ (define $name !NL %rhs) !NL) ... %%body)))
 
 (define-sexprw-tactic splice-empty-let
   ;; Unsafe if %%body contains definitions: changes their scopes
@@ -453,8 +453,15 @@
 (define-sexprw-tactic define-split-lambda
   ;; Inverse of r-define-absorb-lambda
   (sexprw-rewrite
-   '(define ($name (!REP $arg)) %%body)
-   '(define $name !NL (lambda ((!REP ($arg) $arg)) !NL %%body))))
+   '((!AND $define (!OR define define-syntax)) ($name $arg ...) %%body)
+   '($define $name !NL (lambda ($arg ...) !NL %%body))))
+
+' ; example for define-split-lambda
+(define (f x) (or x 1))
+
+' ; another example for define-split-lambda
+(define-syntax (f x) (or x 1))
+
 
 (define-sexprw-tactic eta-expand
   (sexprw-rewrite
