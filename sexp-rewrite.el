@@ -50,6 +50,7 @@ for more details.")
 ;; - hook for scan-whitespace, scan-comments replacements
 ;; - new spacing rule (in PreOutput): NL*
 ;;   - acts as NL if *previous template* contained/generated an NL
+;;     or alternatively, if any surrounding template contained/generated NL
 ;;     (will have to figure out how to track that property)
 ;;     Alternatively, could have LIST, SQLIST just compute & insert
 ;;     SP vs NL as latent... but that would move interp. of adjacent 
@@ -721,8 +722,7 @@ guard body."
 ;; Output = (listof (U string 'NL (cons 'RECT listofstring)))
 
 (defun sexprw-template (template env)
-  "Interprets TEMPLATE using the pattern variables of ENV.
-Returns a list of strings and latent spacing symbols ('SP and 'NL)."
+  "Interprets core TEMPLATE using the pattern variables of ENV."
   ;; (message "** template = %S" template)
   (cond ((stringp template)
          template)
