@@ -297,8 +297,8 @@ Customizable via the variable `sexprw-auto-definition-tactics'."
 ;; Pretty patterns and templates
 
 ;; PP ::= symbol         ~ (quote symbol)
-;;      | $name          ~ (VAR $name SYM)     ; sigil is part of pvar name
-;;      | %name          ~ (VAR %name SEXP)
+;;      | $name:nt       ~ (VAR $name nt)      ; sigil is part of pvar name
+;;      | $name          ~ (VAR $name SEXP)
 ;;      | %%name         ~ (VAR %%name REST n) ; n is # patterns that follow
 ;;      | (PP*)          ~ (LIST P*)
 ;;      | (!@ PP*)       ~ (SPLICE P*)
@@ -331,14 +331,22 @@ Customizable via the variable `sexprw-auto-definition-tactics'."
                   (error "Bad symbol in %s (reserved): %S"
                          (if template "template" "pattern")
                          pretty))
-                 ((string-match "^[$][[:alpha:]].*" name)
-                  `(VAR ,pretty ,@(if template '() '(SYM))))
-                 ((string-match "^[%][[:alpha:]].*" name)
-                  `(VAR ,pretty ,@(if template '() '(SEXP))))
-                 ((string-match "^[%][%][[:alpha:]].*" name)
+                 ((string-match "^[$][[:alpha]][^:]*$" name)
+                  (if template
+                      `(VAR ,pretty)
+                    `(VAR ,pretty sexp)))
+                 ((string-match "^\\([$][[:alpha:]][^:]*\\):\\([[:alpha:]].*\\)$" name)
+                  (let ((var (intern (match-string 1)))
+                        (nt (intern (match-string 2))))
+                    (unless (sexprw-nt-symbolp nt)
+                      (error "Bad pattern variable, no such sexpr-rewrite nonterminal: %S" pretty))
+                    `(VAR ,var ,nt)))
+                 ((string-match "^[%][%][[:alpha:]].*$" name)
                   (unless (or upto template)
                     (t (error "Patterns of unknown size follow %S" pretty)))
-                  `(VAR ,pretty ,@(if template '() `(REST ,upto))))
+                  (if template
+                      `(VAR ,pretty)
+                    `(VAR ,pretty REST ,upto)))
                  (t `(quote ,pretty)))))
         ((not (consp pretty))
          (error "Bad %s: %S" (if template "template" "pattern") pretty))
