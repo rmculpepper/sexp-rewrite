@@ -307,6 +307,7 @@ Customizable via the variable `sexprw-auto-definition-tactics'."
 ;;      | PP ...         ~ (REP P n)           ; n is # patterns that follow
 ;;      | (!OR PP*)      ~ (OR P*)
 ;;      | (!AND PP*)     ~ (AND P*)
+;;      | (!GUARD P expr)~ (GUARD P expr)
 
 ;; PT ::= like PP, with following additions and replacements:
 ;;      | (!SQ PT*)      ~ (SQLIST T*)
@@ -375,6 +376,14 @@ Customizable via the variable `sexprw-auto-definition-tactics'."
                            (mapcar (lambda (p) (sexprw-desugar-pattern p nil 0))
                                    (cddr pretty)))
                    nil))))
+        ((eq (car pretty) '!GUARD)
+         (if template
+             (error "Bad template (!GUARD not allowed): %S" pretty)
+           (let* ((subpattern (sexprw-desugar-pattern (cadr pretty) nil upto))
+                  (guard (caddr pretty)))
+             (unless (functionp guard)
+               (error "Bad template: guard is not a function: %S" pretty))
+             (list 'GUARD subpattern guard))))
         (t ; list
          (cons 'LIST (sexprw-desugar-pattern-list pretty template 0)))))
 
@@ -409,6 +418,8 @@ Customizable via the variable `sexprw-auto-definition-tactics'."
          (apply #'+ (mapcar #'sexprw-pattern-min-size (cdr p))))
         ((memq (car p) '(AND OR))
          (apply #'min (mapcar #'sexprw-pattern-min-size (cdr p))))
+        ((eq (car p) 'GUARD)
+         (sexprw-pattern-min-size (cadr p)))
         (t 0)))
 
 ;; ============================================================
@@ -421,6 +432,7 @@ Customizable via the variable `sexprw-auto-definition-tactics'."
 ;;     | (REP P n)
 ;;     | (AND P*)
 ;;     | (OR P*)
+;;     | (GUARD P expr)
 ;;
 ;; VariableKind ::= SYM       ; symbol
 ;;                | PURE-SEXP ; next sexp, require no preceding comments
@@ -516,7 +528,18 @@ of matched term(s)."
                         (setq ok nil))))
                (setq conjuncts (cdr conjuncts)))
              (and ok (list (apply #'append (reverse renvs)))))))
+        ((eq (car pattern) 'GUARD)
+         (let ((result (sexprw-match (cadr pattern)))
+               (guard (caddr pattern)))
+           (and result
+                (let ((env (car result)))
+                  (or (sexprw-check-guard-result (guard env) env)
+                      (sexprw-fail `(match guard env= ,env)))))))
         (t (error "Bad pattern: %S" pattern))))
+
+;; TODO: check result is nil or (list extension-of-env)?
+(defun sexprw-check-guard-result (result env)
+  result)
 
 (defun sexprw-match-var (pvar kind args)
   (cond ((eq kind 'SYM)
