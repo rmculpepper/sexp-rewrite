@@ -1147,4 +1147,31 @@ at the same column as the first line."
 
 ;; ============================================================
 
+;; sexp-rewrite nonterminal names have property 'sexprw-nt
+
+(defmacro define-sexprw-nt (name &rest clauses)
+  "Define NAME as a sexp-rewrite nonterminal specified by the CLAUSES.
+Each CLAUSE has the form (pattern PATTERN [GUARD])."
+  (cons 'OR (mapcar sexprw-parse-clause clauses)))
+
+(defun sexprw-parse-clause (clause)
+  (unless (and (consp clause)
+               (eq (car clause) 'pattern)
+               (member (length clause) '(2 3)))
+    (error "Bad sexp-rewrite nonterminal clause: %S" clause))
+  (let ((pattern (sexprw-desugar-pattern (cadr clause) nil 0))
+        (guard (and (= (length clause) 3) (nth 2 clause))))
+    (if guard
+        `(GUARD ,pattern ,guard)
+      pattern)))
+
+(defun sexprw-nt-symbolp (sym)
+  (and (get sym 'sexprw-nt) t))
+
+(defun sexprw-nt-value (sym)
+  (or (and (symbolp sym) (get sym 'sexprw-nt))
+      (error "Not a sexp-rewrite nt name: %S" sym)))
+
+;; ============================================================
+
 (provide 'sexp-rewrite)
