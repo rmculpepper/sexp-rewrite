@@ -479,7 +479,7 @@ of matched term(s)."
          (error "Bad pattern: %s" pattern))
         ((eq (car pattern) 'quote)
          ;; Note: grabs pure-sexp, checks contains symbol
-         (let ((next (sexprw-grab-next-sexp t t)))
+         (let ((next (sexprw-grab-next-sexp t)))
            (and (or next
                     (sexprw-fail `(match quote pure-sexp)))
                 (let ((pure-text (car next)))
@@ -676,39 +676,69 @@ of matched term(s)."
 
 ;; ----
 
-(defun sexprw-grab-next-sexp (pure require-pure)
-  "Returns (list TEXT ONELINEP RECT START-POINT END-POINT) or nil.
-TEXT is text from START-POINT to END-POINT. ONELINEP indicates if
-START-POINT and END-POINT are on the same line.  If RECT is not
-nil, START to END was rectangular, and RECT is a list of trimmed
-strings.
+;; A Block is (list 'block TEXT ONELINEP STARTCOL IMPUREPREFIX).
 
-If PURE is non-nil, then START-POINT is taken as the start of the
-sexp; otherwise, it is the first non-whitespace character.  If
-REQUIRE-PURE is non-nil, then there must be no non-whitespace
+(defun sexprw-block-text (block)
+  (nth 1 block))
+(defun sexprw-block-onelinep (block)
+  (nth 2 block))
+(defun sexprw-block-start-column (block)
+  (nth 3 block))
+(defun sexprw-block-impure-prefix (block)
+  (nth 4 block))
+
+(defun sexprw-block-purep (block)
+  (zerop (sexprw-block-impure-prefix block)))
+
+(defun sexprw-block-pure-text (block)
+  (let ((text (sexprw-block-text block))
+        (impure-prefix (sexprw-block-impure-prefix block)))
+    (if (zerop impure-prefix)
+        text
+      (substring text 0 impure-prefix))))
+
+(defun sexprw-block-rectangle (block)
+  (let* ((text (sexprw-block-text block))
+         (start-col (sexprw-block-start-column block)))
+    (sexprw-rectangle text start-col)))
+
+(defun sexprw-grab-next-sexp (require-pure)
+  "Grabs next sexp and returns Block or nil.
+
+A Block is (list 'block TEXT ONELINEP STARTCOL IMPUREPREFIX).
+TEXT is a string containing the contents of the block. ONELINEP
+indicates if the block consists of a single line.
+
+If REQUIRE-PURE is non-nil, then there must be no non-whitespace
 characters before the start of the sexp, or else nil is returned.
 
-Advances point to end of sexp."
+On success, advances point to end of sexp."
   (let ((result (sexprw-grab-next-sexp-range)))
     (and result
-         (or (not require-pure)
-             (equal (nth 1 result) (nth 2 result)))
-         (let ((start (if pure (nth 2 result) (nth 1 result)))
-               (end (nth 3 result)))
-           (goto-char end)
-           (list (filter-buffer-substring start end)
-                 (= (line-number-at-pos start)
-                    (line-number-at-pos end))
-                 (sexprw-rectangle start end)
-                 start
-                 end)))))
+         (let ((nonws-point (nth 1 result))
+               (start-point (nth 2 result))
+               (end-point (nth 3 result)))
+           (and (or (not require-pure)
+                    (= nonws-point start-point))
+                (progn
+                  (goto-char end)
+                  (list 'block
+                        (filter-buffer-substring nonws-point end-point)
+                        (= (line-number-at-pos nonws-point)
+                           (line-number-at-pos end-point))
+                        (save-excursion
+                          (save-restriction
+                            (widen)
+                            (goto-char nonws-point)
+                            (- (point) (beginning-of-line))))
+                        (- start-point nonws-point))))))))
 
 (defun sexprw-grab-next-sexp-range ()
   ;; FIXME/BUG: backwards scan loses things like quote prefix, 
   ;; can lead to treating "'x" as atomic sexp (shouldn't be).
   ;; Maybe add custom comment handling to avoid backwards scan?
-  "Returns (list INIT-POINT WS-POINT START-POINT END-POINT) or nil.
-INIT-POINT is where point started. WS-POINT is the location of
+  "Returns (list INIT-POINT NONWS-POINT START-POINT END-POINT) or nil.
+INIT-POINT is where point started. NONWS-POINT is the location of
 the first non-whitespace character. START-POINT is where the sexp
 starts.  END-POINT is where the sexp ends.  Does not change
 point."
@@ -716,14 +746,14 @@ point."
       (save-excursion
         (let ((init-point (point)))
           (sexprw-skip-whitespace)
-          (let* ((ws-point (point))
-                 (end-point (scan-sexps ws-point 1))
+          (let* ((nonws-point (point))
+                 (end-point (scan-sexps nonws-point 1))
                  (start-point (and end-point (scan-sexps end-point -1))))
             ;; scan-sexps signals error if EOF inside parens,
             ;; returns nil if EOF no sexp found
             (cond ((and start-point
                         (< start-point end-point))
-                   (list init-point ws-point start-point end-point))
+                   (list init-point nonws-point start-point end-point))
                   (t nil)))))
     (scan-error
      ;; (message "Error is %s" error-info)
@@ -1074,32 +1104,23 @@ of list."
 ;; Lisp/Scheme/Racket code is nearly always rectangular, with the
 ;; occasional exception of multi-line string literals.
 
-(defun sexprw-rectangle (start end)
-  "Returns list of lines from START to END if rectangular, otherwise nil.
-Region is rectangular if first non-space char on each line is at
-column at least column of START. Interpret with newline after
-every line except last."
-  (let ((ok t)
-        (rtext nil))
-    (save-excursion
-      (save-restriction
-        (widen)  ;; else may get wrong column number
-        (goto-char start)
-        (forward-line 0)
-        (let ((first-column (- start (point)))
-              (last-point (point)))
-          ;; (message "rect: first column is %S" first-column)
-          (push (filter-buffer-substring start (min (line-end-position) end)) rtext)
-          (forward-line 1)
-          (while (and ok (<= (point) end) (> (point) last-point))
-            (setq last-point (point))
-            (let* ((line-end (min (line-end-position) end))
-                   (col (min (+ (point) first-column) line-end)))
-              (if (string-match "^ *$" (filter-buffer-substring (point) col))
-                  (push (filter-buffer-substring col line-end) rtext)
-                (setq ok nil)))
-            (forward-line 1))))
-      (and ok (reverse rtext)))))
+(defun sexprw-rectangle (string start-col)
+  (let* ((lines (split-string text "[\n]" nil))
+         (ok t)
+         (rtext nil))
+    ;; First line already has indentation removed
+    (push (car lines) rtext)
+    (setq lines (cdr lines))
+    ;; Process successive lines
+    (while (and ok lines)
+      (let* ((line (car lines))
+             (line-end (length line))
+             (col (min start-col line-end)))
+        (if (string-match "^ *$" (substring line 0 col))
+            (push (substring line col) rtext)
+          (setq ok nil)))
+      (setq lines (cdr lines)))
+    (and ok (reverse rtext))))
 
 (defun sexprw-kill-next-rectangular-sexp ()
   "Kills the sexp at point, preserving relative indentation.
@@ -1108,11 +1129,12 @@ after the first so the sexp will be properly indented when
 `yank'ed at column 0 or yanked via `sexprw-yank-rectangular'."
   (interactive)
   (let* ((init-point (point))
-         (next (sexprw-grab-next-sexp t t)))
+         (next (sexprw-grab-next-sexp-range)))
     (unless next
       (error "No sexp at point"))
-    (let ((rect (nth 2 next))
-          (end (nth 4 next)))
+    (let* ((start (nth 1 next))
+           (end (nth 3 next))
+           (rect (sexprw-rectangle (buffer-filter-substring start end))))
       (unless rect
         (error "Non-rectangular sexp at point"))
       (let ((text (mapconcat 'identity rect "\n")))
@@ -1125,13 +1147,19 @@ The region must be rectangular. Whitespace is removed from lines
 after the first so the sexp will be properly indented when
 `yank'ed at column 0 or yanked via `sexprw-yank-rectangular'."
   (interactive "r")
-  (let ((rect (sexprw-rectangle start end)))
-    (message "rect = %S" rect)
-    (unless rect 
-      (error "Non-rectangular region"))
-    (let ((text (mapconcat 'identity rect "\n")))
-      (delete-and-extract-region start end)
-      (kill-new text))))
+  (let ((text (buffer-filter-substring start end))
+        (start-col (save-excursion
+                     (save-restriction
+                       (widen)
+                       (goto-char start)
+                       (- start (beginning-of-line))))))
+    (let ((rect (sexprw-rectangle text start-col)))
+      (message "rect = %S" rect)
+      (unless rect 
+        (error "Non-rectangular region"))
+      (let ((text (mapconcat 'identity rect "\n")))
+        (delete-and-extract-region start end)
+        (kill-new text)))))
 
 (defun sexprw-yank-rectangular ()
   "Yanks text, preserving relative indentation of multi-line text.
