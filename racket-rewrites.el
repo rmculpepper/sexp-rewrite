@@ -122,13 +122,11 @@
   (pattern ($name:id (lambda ($arg ...) $body:rest))
            :guard (lambda (env)
                     (let* ((template '(define ($name $arg ...) !NL $body))
-                           (template (sexprw-desugar-pattern template t))
                            (pre (sexprw-template template env)))
                       (list (cons (cons '$def (cons 'pre pre)) env)))))
   (pattern ($name:id $rhs)
            :guard (lambda (env)
                     (let* ((template '(define $name !NL $rhs))
-                           (template (sexprw-desugar-pattern template t))
                            (pre (sexprw-template template env)))
                       (list (cons (cons '$def (cons 'pre pre)) env))))))
 

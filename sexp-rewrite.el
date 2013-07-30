@@ -263,7 +263,7 @@ Customizable via the variable `sexprw-auto-definition-tactics'."
                     (sexprw-fail `(guard env= ,env)))
                 (let ((preoutput
                        (condition-case error-info
-                           (sexprw-template template (car env*))
+                           (sexprw-template* template (car env*))
                          (template-error 
                           (sexprw-fail `(template ,error-info guard-env=
                                                   ,(car env*)))))))
@@ -878,6 +878,10 @@ guard body."
 ;; Output = (listof (U string 'NL (cons 'RECT listofstring)))
 
 (defun sexprw-template (template env)
+  "Produces PreOutput for TEMPLATE and ENV."
+  (sexprw-template* (sexprw-desugar-pattern template t) env))
+
+(defun sexprw-template* (template env)
   "Interprets core TEMPLATE using the pattern variables of ENV."
   ;; (message "** template = %S" template)
   (cond ((stringp template)
@@ -946,7 +950,7 @@ guard body."
                  (extenv (car extenv+vals)))
             (setq vals (cdr extenv+vals))
             (setq raccum 
-                  (cons (sexprw-template inner extenv)
+                  (cons (sexprw-template* inner extenv)
                         raccum))))
         (reverse raccum)))))
 
@@ -982,7 +986,7 @@ guard body."
   ;; each element should add its own trailing spacing.
   (let ((accum (list '()))) ; nil or (list PreOutput)
     (dolist (inner inners)
-      (setq accum (cons accum (sexprw-template inner env))))
+      (setq accum (cons accum (sexprw-template* inner env))))
     accum))
 
 (defun sexprw-output (pre)
