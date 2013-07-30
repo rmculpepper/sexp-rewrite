@@ -60,9 +60,9 @@
 
 (define-sexprw-tactic if-to-cond
   (sexprw-rewrite
-   '(if %test %then %else)
-   '(cond (!SQ %test %then) !NL
-          (!SQ else %else))))
+   '(if $test $then $else)
+   '(cond (!SQ $test $then) !NL
+          (!SQ else $else))))
 
 ' ; example for if-to-cond, cond-else-absorb-*
 (if (< x 10)
@@ -76,29 +76,29 @@
 
 (define-sexprw-tactic cond-else-absorb-cond
   (sexprw-rewrite
-   '(cond %%clauses (else (cond %%more-clauses)))
-   '(cond %%clauses !NL %%more-clauses)))
+   '(cond $clauses:rest1 (else (cond $more:rest)))
+   '(cond $clauses !NL $more)))
 
 (define-sexprw-tactic cond-else-absorb-if
   (sexprw-rewrite
-   '(cond %%clauses (else (if %test %then %else)))
-   '(cond %%clauses !NL (!SQ %test %then) !NL (!SQ else %else))))
+   '(cond $clauses:rest1 (else (if $test $then $else)))
+   '(cond $clauses !NL (!SQ $test $then) !NL (!SQ else $else))))
 
 (define-sexprw-tactic let-if-to-cond
-  ;; Unsafe if $name occurs free in %else
+  ;; Unsafe if $name occurs free in $else
   (sexprw-rewrite
-   '(let (($name %rhs))
-      (if $name %then %else))
-   '(cond (!SQ %rhs !NL => (lambda ($name) !NL %then)) !NL
-          (!SQ else !NL %else))))
+   '(let (($name:id $rhs))
+      (if $name:id $then $else))
+   '(cond (!SQ $rhs !NL => (lambda ($name) !NL $then)) !NL
+          (!SQ else !NL $else))))
 
 (define-sexprw-tactic cond-else-absorb-let-if
   ;; Unsafe if $name occurs free in %else
   (sexprw-rewrite
-   '(cond %%rest (else (let (($name %rhs)) (if $name %then %else))))
-   '(cond %%rest !NL
-          (!SQ %rhs !NL => (lambda ($name) !NL %then)) !NL
-          (!SQ else %else))))
+   '(cond $clause ... (else (let (($name:id $rhs)) (if $name:id $then $else))))
+   '(cond $clause ... !NL
+          (!SQ $rhs !NL => (lambda ($name) !NL $then)) !NL
+          (!SQ else $else))))
 
 ' ; example for let-if-to-cond
 (let ([x (assq key alist)])

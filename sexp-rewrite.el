@@ -288,10 +288,27 @@ Customizable via the variable `sexprw-auto-definition-tactics'."
         (setq env rest-env)
         (let ((entry2 (assq key1 rest-env)))
           (when entry2
-            (unless (equal entry1 entry2)
+            (unless (sexprw-entry-equal (cdr entry1) (cdr  entry2))
               (sexprw-fail `(nonlinear-pvar ,key1 env= ,env0))
               (setq ok nil))))))
     ok))
+
+(defun sexprw-entry-equal (a b)
+  (cond ((and (eq (car a) 'rep) (eq (car b) 'rep)
+              (= (length a) (length b)))
+         (let ((as (cdr a)) 
+               (bs (cdr b))
+               (ok t))
+           (while (and as bs)
+             (setq ok (sexprw-entry-equal (car as) (car bs)))
+             (setq as (cdr as))
+             (setq bs (cdr bs)))
+           ok))
+        ((and (eq (car a) 'block) (eq (car b) 'block))
+         ;; FIXME: could compare rects (if exist), slightly more equalities
+         (equal (sexprw-block-text a)
+                (sexprw-block-text b)))
+        (t nil)))
 
 ;; ============================================================
 ;; Pretty patterns and templates
@@ -401,9 +418,9 @@ Customizable via the variable `sexprw-auto-definition-tactics'."
                  (when dots
                    (setq dots nil)
                    (cond (template
-                          (setq pp1 (list 'REP pp nil)))
+                          (setq pp1 (list 'REP pp1 nil)))
                          (t
-                          (setq pp1 (list 'REP pp (cons 'SPLICE accum)))
+                          (setq pp1 (list 'REP pp1 (cons 'SPLICE accum)))
                           (setq accum nil))))
                  (push pp1 accum))))))
     (when dots (error "Misplaced dots at beginning of pattern: %S" pretty))
@@ -606,14 +623,16 @@ of matched term(s)."
     ;; Stage 1: build up matches of inner pattern
     (let ((count 0)
           (renvs nil)
+          (last-point (point))
           (proceed t))
-      (push (list count renvs (point)) matches)
+      (push (list count renvs last-point) matches)
       (while proceed
         (let ((next-result (sexprw-match inner)))
-          (cond (next-result
+          (cond ((and next-result (> (point) last-point))
                  (setq count (1+ count))
+                 (setq last-point (point))
                  (push (car next-result) renvs)
-                 (push (list count renvs (point)) matches))
+                 (push (list count renvs last-point) matches))
                 (t
                  (setq proceed nil))))))
     ;; Stage 2: search for match that satisfies after pattern
@@ -936,15 +955,13 @@ guard body."
     (unless entry
       (error "No entry for pvar '%s'" pvar))
     (let ((value (cdr entry)))
-      (cond ((and (consp value) (eq (car value) 'atom))
-             (list (cadr value) 'SP))
-            ((and (consp value) (eq (car value) 'block))
-             (list nil ;; (if (nth 2 value) nil 'NL) ; FIXME: tweak?
-                   (let ((rect (nth 3 value)))
+      (cond ((and (consp value) (eq (car value) 'block))
+             (list nil ;; (if (sexprw-block-onelinep value) nil 'NL) ; FIXME?
+                   (let ((rect (sexprw-block-rectangle value)))
                      (if rect
                          (cons 'RECT rect)
-                       (nth 1 value)))
-                   (if (nth 2 value) 'SP 'NL)))
+                       (sexprw-block-text value)))
+                   (if (sexprw-block-onelinep value) 'SP 'NL)))
             ((and (consp value) (eq (car value) 'rep))
              (error "Depth error for pvar '%s'; value is: %S" pvar value))
             (t (error "Bad pvar value for pvar '%s': %s" pvar value))))))
@@ -1296,6 +1313,7 @@ Each CLAUSE has the form (pattern PATTERN [GUARD])."
                            (list (list (cons '$ x))))))))
 
 (define-sexprw-nt rest
+  "Rest of matchable text"
   :attributes ($)
   (pattern (!SPLICE)
            :guard (lambda (env)
@@ -1304,6 +1322,17 @@ Each CLAUSE has the form (pattern PATTERN [GUARD])."
                       (goto-char (point-max))
                       (let ((b (sexprw-range-to-block init-point nil (point))))
                         (list (list (cons '$ b))))))))
+
+(define-sexprw-nt rest1
+  "Rest but for one sexp"
+  :attributes ($)
+  (pattern (!SPLICE)
+           :guard (lambda (env)
+                    (sexprw-skip-whitespace) ;; FIXME: redundant?
+                    (let ((init-point (point)))
+                      (and (sexprw-skip-forward-to-n-sexps-before-end 1)
+                           (let ((b (sexprw-range-to-block init-point nil (point))))
+                             (list (list (cons '$ b)))))))))
 
 ;; ============================================================
 
