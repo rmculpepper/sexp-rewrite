@@ -1235,7 +1235,7 @@ at the same column as the first line."
 (defmacro define-sexprw-nt (name &rest clauses)
   "Define NAME as a sexp-rewrite nonterminal specified by the CLAUSES.
 Each CLAUSE has the form (pattern PATTERN [GUARD])."
-  `(put ',name 'sexprw-nt (sexprw-parse-nt-def 'name ',clauses)))
+  `(progn (put ',name 'sexprw-nt (sexprw-parse-nt-def 'name ',clauses)) ',name))
 
 (defun sexprw-parse-nt-def (name clauses)
   (let ((docstring nil)
@@ -1259,8 +1259,7 @@ Each CLAUSE has the form (pattern PATTERN [GUARD])."
 
 (defun sexprw-parse-clause (clause)
   (let ((parts clause)
-        (pattern nil)
-        (guard nil))
+        (pattern nil))
     (unless (and (consp parts)
                  (eq (car parts) 'pattern)
                  (>= (length parts) 2))
@@ -1268,19 +1267,28 @@ Each CLAUSE has the form (pattern PATTERN [GUARD])."
     (setq pattern (sexprw-desugar-pattern (cadr parts) nil))
     (setq parts (cddr parts))
     (while parts
-      (unless (and (keywordp (car parts))
-                   (consp (cdr parts)))
+      (unless (keywordp (car parts))
         (error "Bad clause options: %S" clause))
       (cond ((eq (car parts) ':guard)
-             (when guard
-               (error "Duplicate :guard option: %S" clause))
-             (setq guard (cadr parts)))
+             (unless (>= (length parts) 2)
+               (error "Bad :guard option: %S" clause))
+             (setq pattern `(GUARD ,pattern ,(nth 1 parts)))
+             (setq parts (nthcdr 2 parts)))
+            ((eq (car parts) ':with)
+             ;; FIXME: support (pvar ...), etc
+             (unless (>= (length parts) 3)
+               (error "Bad :with option: %S" clause))
+             (let* ((pvar (nth 1 parts))
+                    (template (nth 2 parts))
+                    (with-guard
+                     `(lambda (env)
+                        (let ((pre (sexprw-template ',template env)))
+                          (list (cons (cons ',pvar (cons 'pre pre)) env))))))
+               (setq pattern `(GUARD ,pattern ,with-guard))
+               (setq parts (nthcdr 3 parts))))
             (t
-             (error "Bad clause option keyword: %S" (car parts))))
-      (setq parts (cddr parts)))
-    (if guard
-        `(GUARD ,pattern ,guard)
-      pattern)))
+             (error "Bad clause option keyword: %S" (car parts)))))
+    pattern))
 
 (defun sexprw-nt-symbolp (sym)
   (and (get sym 'sexprw-nt) t))

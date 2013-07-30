@@ -117,26 +117,17 @@
    '(letrec (($name:id $rhs) ...) $body:rest)
    '(let () !NL (!@ (define $name $rhs) !NL) ... $body)))
 
-(define-sexprw-nt let-clause-as-def
+(define-sexprw-nt let-clause
   :attributes ($def)
   (pattern ($name:id (lambda ($arg ...) $body:rest))
-           :guard (lambda (env)
-                    (let* ((template '(define ($name $arg ...) !NL $body))
-                           (pre (sexprw-template template env)))
-                      (list (cons (cons '$def (cons 'pre pre)) env)))))
+           :with $def (define ($name $arg ...) !NL $body))
   (pattern ($name:id $rhs)
-           :guard (lambda (env)
-                    (let* ((template '(define $name !NL $rhs))
-                           (pre (sexprw-template template env)))
-                      (list (cons (cons '$def (cons 'pre pre)) env))))))
+           :with $def (define $name !NL $rhs)))
 
 (define-sexprw-tactic letrec-to-definitions2
   (sexprw-rewrite
-   '(letrec ($c:let-clause-as-def ...) $body:rest)
-   '(let () !NL (!@ $c.$def !NL) ... $body)
-   (lambda (env)
-     (message "env = %S" env)
-     (list env))))
+   '(letrec ($c:let-clause ...) $body:rest)
+   '(let () !NL (!@ $c.$def !NL) ... $body)))
   
 ' ; example for letrec-to-definitions
 (letrec ([odd? (lambda (x) (not (even? x)))]
