@@ -114,9 +114,32 @@
 
 (define-sexprw-tactic letrec-to-definitions
   (sexprw-rewrite
-   '(letrec (($name %rhs) ...) %%body)
-   '(let () !NL (!@ (define $name %rhs) !NL) ... %%body)))
+   '(letrec (($name:id $rhs) ...) $body:rest)
+   '(let () !NL (!@ (define $name $rhs) !NL) ... $body)))
 
+(define-sexprw-nt let-clause-as-def
+  :attributes ($def)
+  (pattern ($name:id (lambda ($arg ...) $body:rest))
+           :guard (lambda (env)
+                    (let* ((template '(define ($name $arg ...) !NL $body))
+                           (template (sexprw-desugar-pattern template t))
+                           (pre (sexprw-template template env)))
+                      (list (cons (cons '$def (cons 'pre pre)) env)))))
+  (pattern ($name:id $rhs)
+           :guard (lambda (env)
+                    (let* ((template '(define $name !NL $rhs))
+                           (template (sexprw-desugar-pattern template t))
+                           (pre (sexprw-template template env)))
+                      (list (cons (cons '$def (cons 'pre pre)) env))))))
+
+(define-sexprw-tactic letrec-to-definitions2
+  (sexprw-rewrite
+   '(letrec ($c:let-clause-as-def ...) $body:rest)
+   '(let () !NL (!@ $c.$def !NL) ... $body)
+   (lambda (env)
+     (message "env = %S" env)
+     (list env))))
+  
 ' ; example for letrec-to-definitions
 (letrec ([odd? (lambda (x) (not (even? x)))]
          [even? (lambda (x) (or (zero? x) (even? (sub1 x))))])
@@ -125,12 +148,12 @@
 (define-sexprw-tactic let-loop-to-definition
   ;; Unsafe if $name occurs free in %init
   (sexprw-rewrite
-   '(let $loop (($arg %init) ...) %%body)
+   '(let $loop:id (($arg:id $init) ...) $body:rest)
    '(let () !NL
       (define ($loop $arg ...) !NL
-        %%body)
+        $body)
       !NL
-      ($loop %init ...))))
+      ($loop $init ...))))
 
 ;; Would be nice to recognize potential 'for' loops,
 ;; but needs a lot more information than we have here.

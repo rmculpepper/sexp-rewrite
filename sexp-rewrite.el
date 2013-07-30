@@ -440,7 +440,8 @@ Customizable via the variable `sexprw-auto-definition-tactics'."
 ;;
 ;; Matching builds an alist mapping pvar symbols to EnvValue
 ;; EnvValue ::= Block
-;;            | (list 'rep EnvValue)             ; representing depth>0 list
+;;            | (list 'rep EnvValue)          ; representing depth>0 list
+;;            | (list 'pre PreOutput)         ; representing computed output
 ;;
 ;; (REP P Pk) means "P ... Pk": match as many P as possible s.t. still
 ;; possible to match Pk afterwards (then commit). Handling together
@@ -667,6 +668,14 @@ of matched term(s)."
 (defun sexprw-pattern-variables (pattern onto)
   ;; Accept templates too
   (cond ((eq (car pattern) 'VAR)
+         (when (> (length pattern) 2)
+           (let* ((pvar (nth 1 pattern))
+                  (nt (nth 2 pattern))
+                  (nt-val (sexprw-nt-value nt)))
+             (let ((attrs (nth 2 nt-val)))
+               (dolist (attr attrs)
+                 (unless (eq attr '$)
+                   (push (intern (format "%s.%s" pvar attr)) onto))))))
          (cons (nth 1 pattern) onto))
         ((memq (car pattern) '(LIST SPLICE SQLIST OR))
          (dolist (inner (cdr pattern))
@@ -925,7 +934,7 @@ guard body."
                                       pvar entry))
                              (cdr value))))
                        vars)))
-    (unless vars (error "No repetition vars for REP: ~S" template))
+    (unless vars (error "No repetition vars for REP: %S" template))
     (let* ((lengths (mapcar #'length vals))
            (length1 (car lengths)))
       (dolist (l lengths)
@@ -962,6 +971,8 @@ guard body."
                          (cons 'RECT rect)
                        (sexprw-block-text value)))
                    (if (sexprw-block-onelinep value) 'SP 'NL)))
+            ((and (consp value) (eq (car value) 'pre))
+             (cdr value))
             ((and (consp value) (eq (car value) 'rep))
              (error "Depth error for pvar '%s'; value is: %S" pvar value))
             (t (error "Bad pvar value for pvar '%s': %s" pvar value))))))
