@@ -157,7 +157,7 @@ Customizable via the variable `sexprw-auto-definition-tactics'."
 
 (defun sexprw-run-tactic (tactic-name)
   (let* ((tactic (sexprw-tactic-value tactic-name)))
-    (and (let ((sexprw-current-tactic tactic-name)) ; fluid-let
+    (and (let ((sexprw-current-operation `(tactic ,tactic-name))) ; fluid-let
            (funcall tactic))
          (list tactic-name))))
 
@@ -204,14 +204,14 @@ Customizable via the variable `sexprw-auto-definition-tactics'."
 ;; ============================================================
 ;; Debugging and diagnostics
 
-(defvar sexprw-current-tactic nil
-  "Name of currently executing tactic.")
+(defvar sexprw-current-operation nil
+  "Name of currently executing operation.")
 
 (defvar sexprw-failure-info nil
-  "Information about last tactic failure(s).")
+  "Information about last sexp-rewrite failure(s).")
 
 (defun sexprw-fail (info)
-  (push (cons sexprw-current-tactic (cons (point) info)) sexprw-failure-info)
+  (push (cons sexprw-current-operation (cons (point) info)) sexprw-failure-info)
   nil)
 
 (defun sexprw-show-failure-info ()
@@ -233,9 +233,9 @@ Customizable via the variable `sexprw-auto-definition-tactics'."
    (list 
     (read-from-minibuffer "Pattern: " nil nil t 'sexprw-pattern-history)
     (read-from-minibuffer "Template: " nil nil t 'sexprw-template-history)))
-  ;; (message "parsed pattern = %S" (sexprw-desugar-pattern pattern nil 0))
-  (sexprw-rewrite/ast (sexprw-desugar-pattern pattern nil 0)
-                      (sexprw-desugar-pattern template t 0)
+  ;; (message "parsed pattern = %S" (sexprw-desugar-pattern pattern nil))
+  (sexprw-rewrite/ast (sexprw-desugar-pattern pattern nil)
+                      (sexprw-desugar-pattern template t)
                       guard))
 
 (defun sexprw-rewrite/ast (pattern template &optional guard)
@@ -298,13 +298,12 @@ Customizable via the variable `sexprw-auto-definition-tactics'."
 
 ;; PP ::= symbol         ~ (quote symbol)
 ;;      | $name:nt       ~ (VAR $name nt)      ; sigil is part of pvar name
-;;      | $name          ~ (VAR $name SEXP)
-;;      | %%name         ~ (VAR %%name REST n) ; n is # patterns that follow
+;;      | $name          ~ (VAR $name sexp)
 ;;      | (PP*)          ~ (LIST P*)
 ;;      | (!@ PP*)       ~ (SPLICE P*)
 ;;      | (!SPLICE PP*)  ~ (SPLICE P*)
-;;      | (!REP PP)      ~ (REP P 0)
-;;      | PP ...         ~ (REP P n)           ; n is # patterns that follow
+;;      | PP ...         ~ (REP P <Pk>)        ; <Pk> is patterns that follow,
+;;                                             ; grouped as splice
 ;;      | (!OR PP*)      ~ (OR P*)
 ;;      | (!AND PP*)     ~ (AND P*)
 ;;      | (!GUARD P expr)~ (GUARD P expr)
@@ -316,87 +315,78 @@ Customizable via the variable `sexprw-auto-definition-tactics'."
 ;;      | (!REP PT vars) ~ (REP T vars)
 ;;      | PT ...         ~ (REP T nil)         ; vars=nil means "auto"
 
-(defun sexprw-desugar-pattern (pretty template upto)
+(defun sexprw-desugar-pattern (pretty template)
   (cond ((null pretty)
          '(LIST))
         ((symbolp pretty)
-         (let ((name (symbol-name pretty)))
-           (cond ((and template (eq pretty '!NL))
-                  '(NL))
-                 ((and template (eq pretty '!SP))
-                  '(SP))
-                 ((eq pretty '...)
-                  (error "Misplaced ellipses: %S" pretty))
-                 ((string-match "^[!]" name)
-                  (error "Bad symbol in %s (reserved): %S"
-                         (if template "template" "pattern")
-                         pretty))
-                 ((string-match "^[$][[:alpha]][^:]*$" name)
-                  (if template
-                      `(VAR ,pretty)
-                    `(VAR ,pretty sexp)))
-                 ((string-match "^\\([$][[:alpha:]][^:]*\\):\\([[:alpha:]].*\\)$" name)
-                  (let ((var (intern (match-string 1)))
-                        (nt (intern (match-string 2))))
-                    (unless (sexprw-nt-symbolp nt)
-                      (error "Bad pattern variable, no such sexpr-rewrite nonterminal: %S" pretty))
-                    `(VAR ,var ,nt)))
-                 ((string-match "^[%][%][[:alpha:]].*$" name)
-                  (unless (or upto template)
-                    (t (error "Patterns of unknown size follow %S" pretty)))
-                  (if template
-                      `(VAR ,pretty)
-                    `(VAR ,pretty REST ,upto)))
-                 (t `(quote ,pretty)))))
+         (sexprw-desugar-pattern-symbol pretty template))
         ((not (consp pretty))
          (error "Bad %s: %S" (if template "template" "pattern") pretty))
         ((memq (car pretty) '(!@ !SPLICE))
-         (cons 'SPLICE (sexprw-desugar-pattern-list (cdr pretty) template upto)))
+         (cons 'SPLICE (sexprw-desugar-pattern-list (cdr pretty) template)))
         ((eq (car pretty) '!SQ)
          (if template
-             (cons 'SQLIST (sexprw-desugar-pattern-list (cdr pretty) template upto))
+             (cons 'SQLIST (sexprw-desugar-pattern-list (cdr pretty) template))
              (error "Bad pattern (!SQ not allowed): %S" pretty)))
         ((eq (car pretty) '!REP)
-         (list 'REP
-               (sexprw-desugar-pattern (nth 1 pretty) template upto)
-               (cond (template
-                      (nth 2 pretty))
-                     ;; pattern
-                     ((consp (nthcdr 2 pretty))
-                      (nth 2 pretty))
-                     (t
-                      (unless upto
-                        (error "Patterns of unknown size follow !REP pattern: %S"
-                               pretty))
-                      upto))))
+         (if template
+             (list 'REP (sexprw-desugar-pattern (nth 1 pretty)) (nth 2 pretty))
+           (error "Bad pattern (!REP not allowed): %S" pretty)))
         ((eq (car pretty) '!OR)
          (if template
              (error "Bad template (!OR not allowed): %S" pretty)
            (cons 'OR
-                 (mapcar (lambda (p) (sexprw-desugar-pattern p nil upto))
+                 (mapcar (lambda (p) (sexprw-desugar-pattern p nil))
                          (cdr pretty)))))
         ((eq (car pretty) '!AND)
          (if template
              (error "Bad template (!AND not allowed): %S" pretty)
            (cons 'AND
                  (if (consp (cdr pretty))
-                     (cons (sexprw-desugar-pattern (cadr pretty) nil upto)
-                           (mapcar (lambda (p) (sexprw-desugar-pattern p nil 0))
+                     (cons (sexprw-desugar-pattern (cadr pretty) nil)
+                           (mapcar (lambda (p) (sexprw-desugar-pattern p nil))
                                    (cddr pretty)))
                    nil))))
         ((eq (car pretty) '!GUARD)
          (if template
              (error "Bad template (!GUARD not allowed): %S" pretty)
-           (let* ((subpattern (sexprw-desugar-pattern (cadr pretty) nil upto))
-                  (guard (caddr pretty)))
+           (let* ((subpattern (sexprw-desugar-pattern (nth 1 pretty) nil))
+                  (guard (nth 2 pretty)))
              (unless (functionp guard)
                (error "Bad template: guard is not a function: %S" pretty))
              (list 'GUARD subpattern guard))))
         (t ; list
-         (cons 'LIST (sexprw-desugar-pattern-list pretty template 0)))))
+         (cons 'LIST (sexprw-desugar-pattern-list pretty template)))))
 
-(defun sexprw-desugar-pattern-list (pretty template upto)
-  ;; Note: *not* same as (mapcar sexprw-desugar-pattern ....)
+(defun sexprw-desugar-pattern-symbol (pretty template)
+  (let ((name (symbol-name pretty)))
+    (cond ((and template (eq pretty '!NL))
+           '(NL))
+          ((and template (eq pretty '!SP))
+           '(SP))
+          ((eq pretty '...)
+           (error "Misplaced ellipses: %S" pretty))
+          ((string-match "^[!]" name)
+           (error "Bad symbol in %s (reserved): %S"
+                  (if template "template" "pattern")
+                  pretty))
+          ((string-match "^[$][_[:alpha:]][^:]*$" name)
+           (if template
+               `(VAR ,pretty)
+             `(VAR ,pretty sexp)))
+          ((string-match "^\\([$][_[:alpha:]][^:]*\\):\\([[:alpha:]].*\\)$" name)
+           (let ((var (intern (match-string 1 name)))
+                 (nt (intern (match-string 2 name))))
+             (unless (sexprw-nt-symbolp nt)
+               (error "Bad pattern variable, no such sexpr-rewrite nonterminal: %S" pretty))
+             `(VAR ,var ,nt)))
+          ((string-match "^[$]" name)
+           (error "Bad pattern variable: %S" pretty))
+          (t `(quote ,pretty)))))
+
+(defun sexprw-desugar-pattern-list (pretty template)
+  ;; Note: *not* same as (mapcar sexprw-desugar-pattern ....), 
+  ;; because handles ellipses.
   (let ((rpretty (reverse pretty))
         (accum nil)
         (dots nil))
@@ -407,28 +397,17 @@ Customizable via the variable `sexprw-auto-definition-tactics'."
                (when dots (error "Repeated ellipses in pattern: %S" pretty))
                (setq dots t))
               (t
-               (let ((pp1 (sexprw-desugar-pattern p1 template upto)))
+               (let ((pp1 (sexprw-desugar-pattern p1 template)))
                  (when dots
                    (setq dots nil)
-                   (setq pp1 (list 'REP pp1 (if template nil upto))))
-                 (setq upto (+ upto (sexprw-pattern-min-size pp1)))
-                 (setq accum (cons pp1 accum)))))))
+                   (cond (template
+                          (setq pp1 (list 'REP pp nil)))
+                         (t
+                          (setq pp1 (list 'REP pp (cons 'SPLICE accum)))
+                          (setq accum nil))))
+                 (push pp1 accum))))))
     (when dots (error "Misplaced dots at beginning of pattern: %S" pretty))
     accum))
-
-(defun sexprw-pattern-min-size (p)
-  (cond ((and (eq (car p) 'VAR)
-              (eq (nth 2 p) 'REST))
-         0)
-        ((memq (car p) '(quote VAR LIST))  ; note: not (VAR _ REST _)
-         1)
-        ((eq (car p) 'SPLICE)
-         (apply #'+ (mapcar #'sexprw-pattern-min-size (cdr p))))
-        ((memq (car p) '(AND OR))
-         (apply #'min (mapcar #'sexprw-pattern-min-size (cdr p))))
-        ((eq (car p) 'GUARD)
-         (sexprw-pattern-min-size (cadr p)))
-        (t 0)))
 
 ;; ============================================================
 ;; Core patterns
@@ -436,25 +415,19 @@ Customizable via the variable `sexprw-auto-definition-tactics'."
 ;; P ::= (LIST P*)
 ;;     | (SPLICE P*)
 ;;     | (quote symbol)
-;;     | (VAR symbol VariableKind)
-;;     | (REP P n)
+;;     | (VAR symbol nt)
+;;     | (REP P Pk)
 ;;     | (AND P*)
 ;;     | (OR P*)
 ;;     | (GUARD P expr)
 ;;
-;; VariableKind ::= SYM       ; symbol
-;;                | PURE-SEXP ; next sexp, require no preceding comments
-;;                | SEXP      ; next sexp and preceding comments
-;;                | REST n    ; rest of enclosing sexp, stopping 'n' sexps
-;;                            ; before end; if 0, gets trailing comments too
-;;
 ;; Matching builds an alist mapping pvar symbols to EnvValue
-;; EnvValue ::= (list 'atom string)              ; representing symbol
-;;            | (list 'block string one-line?    ; representing SEXP, REST
-;;                           strings/nil nat nat)
+;; EnvValue ::= Block
 ;;            | (list 'rep EnvValue)             ; representing depth>0 list
 ;;
-;; (REP P n), like (VAR name REST n), stops 'n' sexps before end
+;; (REP P Pk) means "P ... Pk": match as many P as possible s.t. still
+;; possible to match Pk afterwards (then commit). Handling together
+;; avoids (non-local) backtracking while supporting non-trivial Pks.
 
 ;; FIXME (or not): doesn't handle dotted-pair notation
 
@@ -471,7 +444,7 @@ Customizable via the variable `sexprw-auto-definition-tactics'."
 
 (defun sexprw-match (pattern)
   "Matches the sexp starting at point against core PATTERN,
-returning an \(list alist) mapping the pattern variables of
+returning an \(list ENV) mapping the pattern variables of
 PATTERN to fragments, or nil on failure.  Advances point to end
 of matched term(s)."
   ;; (message "matching (%S): %S" (point) pattern)
@@ -482,7 +455,7 @@ of matched term(s)."
          (let ((next (sexprw-grab-next-sexp t)))
            (and (or next
                     (sexprw-fail `(match quote pure-sexp)))
-                (let ((pure-text (car next)))
+                (let ((pure-text (sexprw-block-pure-text next)))
                   (and (or (string-match sexprw-pure-atom-re pure-text)
                            (sexprw-fail `(match quote is-symbol)))
                        (or (equal pure-text (symbol-name (cadr pattern)))
@@ -491,11 +464,11 @@ of matched term(s)."
                                     ,(symbol-name (cadr pattern)))))
                        (list nil))))))
         ((eq (car pattern) 'VAR)
-         (sexprw-match-var (nth 1 pattern) (nth 2 pattern) (nthcdr 3 pattern)))
+         (sexprw-match-var (nth 1 pattern) (nth 2 pattern)))
         ((eq (car pattern) 'LIST)
          (sexprw-match-list (cdr pattern)))
         ((eq (car pattern) 'SPLICE)
-         (sexprw-match-list-contents (cdr pattern)))
+         (sexprw-match-patterns (cdr pattern)))
         ((eq (car pattern) 'REP)
          (sexprw-match-rep (nth 1 pattern) (nth 2 pattern)))
         ((eq (car pattern) 'OR)
@@ -537,11 +510,11 @@ of matched term(s)."
                (setq conjuncts (cdr conjuncts)))
              (and ok (list (apply #'append (reverse renvs)))))))
         ((eq (car pattern) 'GUARD)
-         (let ((result (sexprw-match (cadr pattern)))
-               (guard (caddr pattern)))
+         (let ((result (sexprw-match (nth 1 pattern)))
+               (guard (nth 2 pattern)))
            (and result
                 (let ((env (car result)))
-                  (or (sexprw-check-guard-result (guard env) env)
+                  (or (sexprw-check-guard-result (funcall guard env) env)
                       (sexprw-fail `(match guard env= ,env)))))))
         (t (error "Bad pattern: %S" pattern))))
 
@@ -549,43 +522,36 @@ of matched term(s)."
 (defun sexprw-check-guard-result (result env)
   result)
 
-(defun sexprw-match-var (pvar kind args)
-  (cond ((eq kind 'SYM)
-         ;; Note: grabs pure-sexp, checks contains symbol
-         (let ((next (sexprw-grab-next-sexp t t)))
-           (and (or next
-                    (sexprw-fail `(match var sym grab)))
-                (let ((pure-text (car next)))
-                  (and (or (string-match sexprw-pure-atom-re pure-text)
-                           (sexprw-fail `(match var sym equal)))
-                       (list (list (cons pvar (list 'atom pure-text)))))))))
-        ((eq kind 'PURE-SEXP)
-         (let ((next (sexprw-grab-next-sexp t t)))
-           (and (or next
-                    (sexprw-fail `(match var pure-sexp grab)))
-                (list (list (cons pvar (cons 'block next)))))))
-        ((eq kind 'SEXP)
-         (let ((next (sexprw-grab-next-sexp nil nil)))
-           (and (or next
-                    (sexprw-fail `(match var sexp grab)))
-                (list (list (cons pvar (cons 'block next)))))))
-        ((eq kind 'REST)
-         ;; (message "matching REST %S" (car args))
-         (sexprw-skip-whitespace)
-         (let ((init-point (point)))
-           ;; (message "REST: init-point = %S" init-point)
-           (and (or (sexprw-skip-forward-to-n-sexps-before-end (car args))
-                    (sexprw-fail `(match var rest skip ,(car args))))
-                (list
-                 (list (cons pvar
-                             (list 'block
-                                   (filter-buffer-substring init-point (point))
-                                   (= (line-number-at-pos init-point)
-                                      (line-number-at-pos (point)))
-                                   (sexprw-rectangle init-point (point))
-                                   init-point
-                                   (point))))))))
-        (t (error "Bad pattern variable kind for pvar '%s': %s" pvar kind))))
+(defun sexprw-match-var (pvar nt)
+  (sexprw-skip-whitespace)
+  (let* ((init-point (point))
+         (nt-val (sexprw-nt-value nt))
+         (nt-pattern (nth 1 nt-val))
+         (nt-attrs (nth 2 nt-val)))
+    (let ((result (sexprw-match nt-pattern)))
+      (and result
+           (sexprw-check-nonlinear-patterns (car result))
+           (let ((env (sexprw-adj-env (car result) nt nt-attrs pvar)))
+             (unless (assq pvar env)
+               (let ((b (sexprw-range-to-block init-point nil (point))))
+                 (push (cons pvar b) env)))
+             (if (eq pvar '$_)
+                 (list nil)
+               (list env)))))))
+
+(defun sexprw-adj-env (env nt attrs prefix)
+  "Checks, restricts, and prefixes ENV."
+  (let ((new-env nil))
+    (dolist (attr attrs)
+      (let ((entry (assq attr env)))
+        (unless entry
+          (error "Nonterminal `%S' did not bind attribute `%S'" nt attr))
+        (let ((prefixed-attr
+               (if (eq attr '$)
+                   prefix
+                 (intern (format "%s.%s" prefix attr)))))
+          (push (cons prefixed-attr (cdr entry)) new-env))))
+    (reverse new-env)))
 
 ;; returns t on success, nil if fewer than n sexps before end
 (defun sexprw-skip-forward-to-n-sexps-before-end (n)
@@ -603,48 +569,67 @@ of matched term(s)."
                     t))))))
 
 (defun sexprw-match-list (inners)
-  (let ((next (sexprw-grab-next-sexp t t)))
+  (let ((next (sexprw-grab-next-sexp t)))
     (and (or next
              (sexprw-fail `(match-list grab)))
-         (member (substring (car next) 0 1) '("(" "[" "{"))
+         (member (substring (sexprw-block-pure-text next) 0 1) '("(" "[" "{"))
          ;; narrow to just after start, just before end
          (let ((result
                 (save-excursion
                   (save-restriction
-                    (goto-char (1+ (nth 3 next)))
-                    (narrow-to-region (1+ (nth 3 next)) (1- (nth 4 next)))
-                    (sexprw-match-list-contents inners)))))
+                    (let ((start (sexprw-block-pure-start-position next))
+                          (end (sexprw-block-end-position next)))
+                      (goto-char (1+ start))
+                      (narrow-to-region (1+ start) (1- end))
+                      (let ((result (sexprw-match-patterns inners)))
+                        (and result
+                             (or (looking-at (concat sexprw-all-whitespace-re "\\'"))
+                                 (sexprw-fail `(match-list end check-whitespace)))
+                             result)))))))
            ;; save-excursion resets point to end of list
            result))))
 
-(defun sexprw-match-list-contents (inners)
+(defun sexprw-match-patterns (inners)
   (let ((accum (list '()))) ; nil or (list alist)
     (dolist (inner inners)
       (when accum
         (let ((inner-result (sexprw-match inner)))
           (setq accum (and inner-result
                            (list (append (car inner-result) (car accum))))))))
-    (and accum
-         (or (looking-at (concat sexprw-all-whitespace-re "\\'"))
-             (sexprw-fail `(match-list end check-whitespace)))
-         accum)))
+    accum))
 
-(defun sexprw-match-rep (inner upto)
-  (let ((raccum '())
-        (proceed (point)))
-    (save-restriction
-      (sexprw-skip-forward-to-n-sexps-before-end upto)
-      (narrow-to-region proceed (point))
+(defun sexprw-match-rep (inner after)
+  ;; FIXME: add failure info
+  (let ((matches nil))
+    ;; matches : (listof (list match-count reversed-env-list point))
+    ;; Each entry is after successfully matching inner match-count times.
+    ;; Stage 1: build up matches of inner pattern
+    (let ((count 0)
+          (renvs nil)
+          (proceed t))
+      (push (list count renvs (point)) matches)
       (while proceed
-        (goto-char proceed)
-        (save-excursion
-          (let ((next-result (sexprw-match inner)))
-            (cond (next-result
-                   (setq raccum (cons (car next-result) raccum))
-                   (setq proceed (point)))
-                  (t
-                   (setq proceed nil))))))
-      (list (sexprw-reverse-merge-alists inner raccum)))))
+        (let ((next-result (sexprw-match inner)))
+          (cond (next-result
+                 (setq count (1+ count))
+                 (push (car next-result) renvs)
+                 (push (list count renvs (point)) matches))
+                (t
+                 (setq proceed nil))))))
+    ;; Stage 2: search for match that satisfies after pattern
+    (let ((answer nil))
+      (while (and matches (not answer))
+        (let* ((match0 (car matches))
+               (match-renvs (nth 1 match0))
+               (match-point (nth 2 match0)))
+          (setq matches (cdr matches))
+          (goto-char match-point)
+          (let ((next-result (sexprw-match after)))
+            (when next-result
+              (let* ((env (sexprw-reverse-merge-alists inner match-renvs))
+                     (env (append (car next-result) env)))
+                (setq answer (list env)))))))
+      answer)))
 
 ;; FIXME: quadratic
 (defun sexprw-reverse-merge-alists (inner alists)
@@ -676,7 +661,7 @@ of matched term(s)."
 
 ;; ----
 
-;; A Block is (list 'block TEXT ONELINEP STARTCOL IMPUREPREFIX).
+;; A Block is (list 'block TEXT ONELINEP STARTCOL IMPUREPREFIX START END).
 
 (defun sexprw-block-text (block)
   (nth 1 block))
@@ -686,16 +671,29 @@ of matched term(s)."
   (nth 3 block))
 (defun sexprw-block-impure-prefix (block)
   (nth 4 block))
+(defun sexprw-block-start-position (block)
+  (nth 5 block))
+(defun sexprw-block-end-position (block)
+  (nth 6 block))
 
 (defun sexprw-block-purep (block)
   (zerop (sexprw-block-impure-prefix block)))
 
+(defun sexprw-block-pure-start-position (block)
+  (let ((start (sexprw-block-start-position block))
+        (impure-prefix (sexprw-block-impure-prefix block)))
+    (unless impure-prefix
+      (error "Block has unknown contents"))
+    (+ start impure-prefix)))
+
 (defun sexprw-block-pure-text (block)
   (let ((text (sexprw-block-text block))
         (impure-prefix (sexprw-block-impure-prefix block)))
-    (if (zerop impure-prefix)
-        text
-      (substring text 0 impure-prefix))))
+    (cond ((null impure-prefix)
+           (error "Block has unknown contents"))
+          ((zerop impure-prefix)
+           text)
+          (t (substring text 0 impure-prefix)))))
 
 (defun sexprw-block-rectangle (block)
   (let* ((text (sexprw-block-text block))
@@ -705,9 +703,15 @@ of matched term(s)."
 (defun sexprw-grab-next-sexp (require-pure)
   "Grabs next sexp and returns Block or nil.
 
-A Block is (list 'block TEXT ONELINEP STARTCOL IMPUREPREFIX).
+A Block is (list 'block TEXT ONELINEP STARTCOL IMPUREPREFIX START END).
 TEXT is a string containing the contents of the block. ONELINEP
 indicates if the block consists of a single line.
+
+If IMPUREPREFIX is an integer, the block represents a single sexp
+preceeded by comments, and IMPUREPREFIX is the number of
+characters before the start of the sexp. If IMPUREPREFIX is nil,
+then TEXT may represent multiple sexps or something else
+entirely.
 
 If REQUIRE-PURE is non-nil, then there must be no non-whitespace
 characters before the start of the sexp, or else nil is returned.
@@ -721,17 +725,24 @@ On success, advances point to end of sexp."
            (and (or (not require-pure)
                     (= nonws-point start-point))
                 (progn
-                  (goto-char end)
-                  (list 'block
-                        (filter-buffer-substring nonws-point end-point)
-                        (= (line-number-at-pos nonws-point)
-                           (line-number-at-pos end-point))
-                        (save-excursion
-                          (save-restriction
-                            (widen)
-                            (goto-char nonws-point)
-                            (- (point) (beginning-of-line))))
-                        (- start-point nonws-point))))))))
+                  (goto-char end-point)
+                  (sexprw-range-to-block start-point 
+                                         nonws-point
+                                         end-point)))))))
+
+(defun sexprw-range-to-block (start pure-start end)
+  (list 'block
+        (filter-buffer-substring start end)
+        (= (line-number-at-pos start)
+           (line-number-at-pos end))
+        (save-excursion
+          (save-restriction
+            (widen)
+            (goto-char start)
+            (- (point) (line-beginning-position))))
+        (and pure-start (- pure-start start))
+        start
+        end))
 
 (defun sexprw-grab-next-sexp-range ()
   ;; FIXME/BUG: backwards scan loses things like quote prefix, 
@@ -1042,9 +1053,12 @@ guard body."
   (interactive
    (list (read-from-minibuffer "Search pattern: " nil nil t
                                'sexprw-pattern-history)))
-  (sexprw-search-pattern/ast (sexprw-desugar-pattern pattern nil 0)))
+  (let ((sexrpw-current-operation 'search)) ;; fluid-let
+    (setq sexprw-failure-info nil)
+    (sexprw-search-pattern/ast (sexprw-desugar-pattern pattern nil))))
 
 (defun sexprw-search-pattern/ast (pattern)
+  ;; (message "search pattern = %S" pattern)
   (let ((init-point (point))
         (success nil)
         (continue t))
@@ -1154,7 +1168,7 @@ after the first so the sexp will be properly indented when
                        (goto-char start)
                        (- start (beginning-of-line))))))
     (let ((rect (sexprw-rectangle text start-col)))
-      (message "rect = %S" rect)
+      ;; (message "rect = %S" rect)
       (unless rect 
         (error "Non-rectangular region"))
       (let ((text (mapconcat 'identity rect "\n")))
@@ -1184,19 +1198,54 @@ at the same column as the first line."
 ;; ============================================================
 
 ;; sexp-rewrite nonterminal names have property 'sexprw-nt
+;; with value (list 'nt P attrs docstring), where attrs is list of symbol
 
 (defmacro define-sexprw-nt (name &rest clauses)
   "Define NAME as a sexp-rewrite nonterminal specified by the CLAUSES.
 Each CLAUSE has the form (pattern PATTERN [GUARD])."
-  (cons 'OR (mapcar sexprw-parse-clause clauses)))
+  `(put ',name 'sexprw-nt (sexprw-parse-nt-def 'name ',clauses)))
+
+(defun sexprw-parse-nt-def (name clauses)
+  (let ((docstring nil)
+        (attrs nil))
+    (when (and (consp clauses)
+               (stringp (car clauses)))
+      (setq docstring (car clauses))
+      (setq clauses (cdr clauses)))
+    (when (and (>= (length clauses) 2)
+               (eq (car clauses) ':attributes))
+      (setq attrs (cadr clauses))
+      (dolist (attr attrs)
+        (unless (symbolp attr)
+          (error "Expected symbol for attribute: %S" attr)))
+      (setq clauses (cddr clauses)))
+    (let* ((patterns (mapcar #'sexprw-parse-clause clauses))
+           (pattern (if (= 1 (length patterns))
+                        (car patterns)
+                      (cons 'OR patterns))))
+      (list 'nt pattern attrs docstring))))
 
 (defun sexprw-parse-clause (clause)
-  (unless (and (consp clause)
-               (eq (car clause) 'pattern)
-               (member (length clause) '(2 3)))
-    (error "Bad sexp-rewrite nonterminal clause: %S" clause))
-  (let ((pattern (sexprw-desugar-pattern (cadr clause) nil 0))
-        (guard (and (= (length clause) 3) (nth 2 clause))))
+  (let ((parts clause)
+        (pattern nil)
+        (guard nil))
+    (unless (and (consp parts)
+                 (eq (car parts) 'pattern)
+                 (>= (length parts) 2))
+      (error "Bad sexp-rewrite nonterminal clause: %S" clause))
+    (setq pattern (sexprw-desugar-pattern (cadr parts) nil))
+    (setq parts (cddr parts))
+    (while parts
+      (unless (and (keywordp (car parts))
+                   (consp (cdr parts)))
+        (error "Bad clause options: %S" clause))
+      (cond ((eq (car parts) ':guard)
+             (when guard
+               (error "Duplicate :guard option: %S" clause))
+             (setq guard (cadr parts)))
+            (t
+             (error "Bad clause option keyword: %S" (car parts))))
+      (setq parts (cddr parts)))
     (if guard
         `(GUARD ,pattern ,guard)
       pattern)))
@@ -1207,6 +1256,54 @@ Each CLAUSE has the form (pattern PATTERN [GUARD])."
 (defun sexprw-nt-value (sym)
   (or (and (symbolp sym) (get sym 'sexprw-nt))
       (error "Not a sexp-rewrite nt name: %S" sym)))
+
+;; ============================================================
+
+;; Built-in sexprw nonterminals
+
+;; Sneaky tricks: 
+;;  - (!SPLICE) is no-op pattern
+;   - guard can use and move point (discouraged in user nts, though!)
+
+(define-sexprw-nt pure-sexp
+  :attributes ($)
+  (pattern (!SPLICE)
+           :guard (lambda (env)
+                    (let ((next (sexprw-grab-next-sexp t)))
+                      (and (or next
+                               (sexprw-fail `(match var pure-sexp grab)))
+                           (list (list (cons '$ next))))))))
+
+(define-sexprw-nt sexp
+  :attributes ($)
+  (pattern (!SPLICE)
+           :guard (lambda (env)
+                    (let ((next (sexprw-grab-next-sexp nil)))
+                      (and (or next
+                               (sexprw-fail `(match var sexp grab)))
+                           (list (list (cons '$ next))))))))
+
+(define-sexprw-nt id
+  :attributes ($)
+  (pattern $x:pure-sexp
+           :guard (lambda (env)
+                    (let* ((x (sexprw-env-ref env '$x))
+                           (pure-text (sexprw-block-pure-text x)))
+                      ;; (message "x = %S" x)
+                      ;; (message "pure-text = %S" pure-text)
+                      (and (or (string-match sexprw-pure-atom-re pure-text)
+                               (sexprw-fail `(match var sym atom)))
+                           (list (list (cons '$ x))))))))
+
+(define-sexprw-nt rest
+  :attributes ($)
+  (pattern (!SPLICE)
+           :guard (lambda (env)
+                    (sexprw-skip-whitespace) ;; FIXME: redundant?
+                    (let ((init-point (point)))
+                      (goto-char (point-max))
+                      (let ((b (sexprw-range-to-block init-point nil (point))))
+                        (list (list (cons '$ b))))))))
 
 ;; ============================================================
 
