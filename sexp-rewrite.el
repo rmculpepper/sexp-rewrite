@@ -319,7 +319,7 @@ Customizable via the variable `sexprw-auto-definition-tactics'."
 ;;      | (PP*)          ~ (LIST P*)
 ;;      | (!@ PP*)       ~ (SPLICE P*)
 ;;      | (!SPLICE PP*)  ~ (SPLICE P*)
-;;      | PP ...         ~ (REP P <Pk>)        ; <Pk> is patterns that follow,
+;;      | PP ...         ~ (pREP P <Pk>)       ; <Pk> is patterns that follow,
 ;;                                             ; grouped as splice
 ;;      | (!OR PP*)      ~ (OR P*)
 ;;      | (!AND PP*)     ~ (AND P*)
@@ -329,8 +329,8 @@ Customizable via the variable `sexprw-auto-definition-tactics'."
 ;;      | (!SQ PT*)      ~ (SQLIST T*)
 ;;      | !NL            ~ (NL)
 ;;      | !SP            ~ (SP)
-;;      | (!REP PT vars) ~ (REP T vars)
-;;      | PT ...         ~ (REP T nil)         ; vars=nil means "auto"
+;;      | (!REP PT vars) ~ (tREP T vars)
+;;      | PT ...         ~ (tREP T nil)        ; vars=nil means "auto"
 
 (defun sexprw-desugar-pattern (pretty template)
   (cond ((null pretty)
@@ -347,7 +347,7 @@ Customizable via the variable `sexprw-auto-definition-tactics'."
              (error "Bad pattern (!SQ not allowed): %S" pretty)))
         ((eq (car pretty) '!REP)
          (if template
-             (list 'REP (sexprw-desugar-pattern (nth 1 pretty)) (nth 2 pretty))
+             (list 'tREP (sexprw-desugar-pattern (nth 1 pretty)) (nth 2 pretty))
            (error "Bad pattern (!REP not allowed): %S" pretty)))
         ((eq (car pretty) '!OR)
          (if template
@@ -418,9 +418,9 @@ Customizable via the variable `sexprw-auto-definition-tactics'."
                  (when dots
                    (setq dots nil)
                    (cond (template
-                          (setq pp1 (list 'REP pp1 nil)))
+                          (setq pp1 (list 'tREP pp1 nil)))
                          (t
-                          (setq pp1 (list 'REP pp1 (cons 'SPLICE accum)))
+                          (setq pp1 (list 'pREP pp1 (cons 'SPLICE accum)))
                           (setq accum nil))))
                  (push pp1 accum))))))
     (when dots (error "Misplaced dots at beginning of pattern: %S" pretty))
@@ -433,7 +433,7 @@ Customizable via the variable `sexprw-auto-definition-tactics'."
 ;;     | (SPLICE P*)
 ;;     | (quote symbol)
 ;;     | (VAR symbol nt)
-;;     | (REP P Pk)
+;;     | (pREP P Pk)
 ;;     | (AND P*)
 ;;     | (OR P*)
 ;;     | (GUARD P expr)
@@ -443,7 +443,7 @@ Customizable via the variable `sexprw-auto-definition-tactics'."
 ;;            | (list 'rep EnvValue)          ; representing depth>0 list
 ;;            | (list 'pre PreOutput)         ; representing computed output
 ;;
-;; (REP P Pk) means "P ... Pk": match as many P as possible s.t. still
+;; (pREP P Pk) means "P ... Pk": match as many P as possible s.t. still
 ;; possible to match Pk afterwards (then commit). Handling together
 ;; avoids (non-local) backtracking while supporting non-trivial Pks.
 
@@ -487,7 +487,7 @@ of matched term(s)."
          (sexprw-match-list (cdr pattern)))
         ((eq (car pattern) 'SPLICE)
          (sexprw-match-patterns (cdr pattern)))
-        ((eq (car pattern) 'REP)
+        ((eq (car pattern) 'pREP)
          (sexprw-match-rep (nth 1 pattern) (nth 2 pattern)))
         ((eq (car pattern) 'OR)
          (let ((init-point (point))
@@ -681,7 +681,10 @@ of matched term(s)."
          (dolist (inner (cdr pattern))
            (setq onto (sexprw-pattern-variables inner onto)))
          onto)
-        ((eq (car pattern) 'REP)
+        ((eq (car pattern) 'pREP)
+         (sexprw-pattern-variables (nth 1 pattern) 
+                                   (sexprw-pattern-variables (nth 2 pattern) onto)))
+        ((eq (car pattern) 'tREP)
          (sexprw-pattern-variables (nth 1 pattern) onto))
         ((memq (car pattern) '(quote SP NL))
          onto)
@@ -845,13 +848,13 @@ guard body."
       (while (and worklist (not failed))
         (let ((item (car worklist)))
           (setq worklist (cdr worklist))
-          (cond ((eq (car item) 'atom)
-                 (when (equal (cadr item) ".")
+          (cond ((eq (car item) 'block)
+                 (when (equal (sexprw-block-pure-text item) ".")
                    (setq failed t)))
                 ((eq (car item) 'rep)
                  (setq worklist (append (cdr item) worklist)))
                 (t
-                 (error "Non-atom value for pvar '%s': %S" pvar item))))))
+                 (error "Bad value for pvar '%s': %S" pvar item))))))
     (and (or (not failed)
              (sexprw-fail `(guard no-dot)))
          (list env))))
@@ -869,8 +872,7 @@ guard body."
 ;;     | (SP)            ; latent space (ie, change latent newline to latent
 ;;     |                 ; space)
 ;;     | (NL)            ; latent newline
-;;     | (REP vars T*)   ; NOTE: splicing repetition, to allow eg
-;;     |                 ; (REP <vars> expr NL) vars is pvars to map over
+;;     | (tREP T vars)   ; repetition
 ;;
 ;; PreOutput = (treeof (U string 'SP 'NL 'NONE (cons 'RECT listofstring)))
 ;; Interpret PreOutput left to right; *last* spacing symbol to occur wins.
@@ -911,7 +913,7 @@ guard body."
          'SP)
         ((eq (car template) 'NL)
          'NL)
-        ((eq (car template) 'REP)
+        ((eq (car template) 'tREP)
          (sexprw-template-rep template env))))
 
 (defun sexprw-template-rep (template env)
@@ -938,7 +940,7 @@ guard body."
                                       pvar entry))
                              (cdr value))))
                        vars)))
-    (unless vars (error "No repetition vars for REP: %S" template))
+    (unless vars (error "No repetition vars for tREP: %S" template))
     (let* ((lengths (mapcar #'length vals))
            (length1 (car lengths)))
       (dolist (l lengths)

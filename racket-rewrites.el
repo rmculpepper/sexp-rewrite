@@ -161,19 +161,22 @@
   ;; contains definitions of some $x where $x collides with some $name
   ;; or if $x occurs free in any %rhs.
   (sexprw-rewrite
-   '(let (($name %rhs) ...) %%body)
-   '(let () !NL (!@ (define $name %rhs) !NL) ... %%body)))
+   '(let (($name:id $rhs) ...) $body:rest)
+   '(let () !NL (!@ (define $name $rhs) !NL) ... $body)))
+
+' ; example for let-to-definitions
+(let ((x 1) (y 2)) (+ x y))
 
 ;; let/let* absorption requires single-clause lets; unsafe otherwise
 ;; (changes scoping)
 (define-sexprw-tactic let-absorb-let*
   (sexprw-rewrite
-   '(let (($var %rhs)) (let* (%%clauses) %%body))
-   '(let* ((!SQ $var %rhs) !NL %%clauses) !NL %%body)))
+   '(let (($var:id $rhs)) (let* ($clauses:rest) $body:rest))
+   '(let* ((!SQ $var $rhs) !NL $clauses) !NL $body)))
 (define-sexprw-tactic let*-absorb-let
   (sexprw-rewrite
-   '(let* (%%clauses) (let (($var %rhs)) %%body))
-   '(let* (%%clauses !NL (!SQ $var %rhs)) !NL %%body)))
+   '(let* ($clauses:rest) (let (($var:id $rhs)) $body:rest))
+   '(let* ($clauses !NL (!SQ $var $rhs)) !NL $body)))
 
 ' ; example for let-absorb-let*, let*-absorb-let
 (let ((x 1))
@@ -185,8 +188,8 @@
 (define-sexprw-tactic begin-trivial
   ;; See also let-splice, begin-splice
   (sexprw-rewrite
-   '(begin %body)
-   '%body))
+   '(begin $body)
+   '$body))
 
 ' ; example for begin-trivial
 (begin 5)
@@ -198,10 +201,19 @@
 (define-sexprw-tactic ormap    (r-*map 'ormap    'for/or))
 (define-sexprw-tactic andmap   (r-*map 'map      'for/and))
 
+(define-sexprw-nt list-expr
+  :attributes ($for-rhs)
+  (pattern (vector->list $e)
+           :with $for-rhs (in-vector $e))
+  (pattern (string->list $e)
+           :with $for-rhs (in-string $e))
+  (pattern $e
+           :with $for-rhs (in-list $e)))
+
 (defun r-*map (map-symbol for-symbol)
   (sexprw-rewrite
-   `(,map-symbol (lambda ($arg ...) %%body) %lst ...)
-   `(,for-symbol ((!@ (!SQ $arg (in-list %lst)) !NL) ...) !NL %%body)))
+   `(,map-symbol (lambda ($arg:id ...) $body:rest) $lst:list-expr ...)
+   `(,for-symbol ((!@ (!SQ $arg (in-list $lst.$for-rhs)) !NL) ...) !NL $body)))
 
 ' ; example for ormap
 (define (pointwise< xs ys)
@@ -211,22 +223,15 @@
 (define (frobble xs ys)
   (map (lambda (x y) (bargle x y)) xs ys))
 
-;; TODO: 
-;;      (map (lambda (e) body) (vector->list v))
-;;   => (for/list ([e (in-vector v)]) body)
-;; or instead, just
-;;      (in-list (vector->list v)) => (in-vector v)
-;; Perhaps group tactics like (in-list (vector->list _)) together
-;; under tactic name, use recursive processing to apply?
-;; (Don't want to automatically try *all* expr tactics, probably.)
-;; Problem: not recursively processing original text, but generated text.
+' ; example of "optimization"
+(map (lambda (e) (add1 e)) (vector->list es))
 
 (define-sexprw-tactic foldl
   (sexprw-rewrite
-   '(foldl (lambda ($arg ... $accum) %%body) %init %lst ...)
-   '(for/fold ((!SQ $accum %init)) !NL
-              ((!@ (!SQ $arg (in-list %lst)) !NL) ...) !NL
-      %%body)))
+   '(foldl (lambda ($arg:id ... $accum:id) $body:rest) $init $lst ...)
+   '(for/fold ((!SQ $accum $init)) !NL
+              ((!@ (!SQ $arg (in-list $lst)) !NL) ...) !NL
+      $body)))
 
 ' ; example for foldl
 (foldl (lambda (x y acc) (f x (g y acc) acc))
@@ -242,23 +247,23 @@
 
 (define-sexprw-tactic build-list
   (sexprw-rewrite
-   '(build-list %n (lambda ($arg) %%body))
-   '(for/list ((!SQ $arg (in-range %n))) !NL %%body)))
+   '(build-list $n (lambda ($arg:id) $body:rest))
+   '(for/list ((!SQ $arg (in-range $n))) !NL $body)))
 
 (define-sexprw-tactic for/sum-from-map
   (sexprw-rewrite
-   '(apply + (map (lambda ($arg ...) %%body) %lst ...))
-   '(for/sum ((!@ (!SQ $arg (in-list %lst)) !NL) ...) !NL %%body)))
+   '(apply + (map (lambda ($arg:id ...) $body:rest) $lst ...))
+   '(for/sum ((!@ (!SQ $arg:id (in-list $lst)) !NL) ...) !NL $body)))
 
 (define-sexprw-tactic for/sum-from-for/list
   (sexprw-rewrite
-   '(apply + (for/list %%body))
-   '(for/sum %%body)))
+   '(apply + (for/list $body:rest))
+   '(for/sum $body)))
 
 (define-sexprw-tactic in-list-vector->list
   (sexprw-rewrite
-   '(in-list (vector->list %e))
-   '(in-vector %e)))
+   '(in-list (vector->list $e))
+   '(in-vector $e)))
 
 ;; ============================================================
 ;; Definition rewritings
@@ -277,8 +282,8 @@
 
 (define-sexprw-tactic define-absorb-lambda
   (sexprw-rewrite
-   '(define $name (lambda ($arg ...) %%body))
-   '(define ($name $arg ...) !NL %%body)))
+   '(define $name:id (lambda ($arg ...) $body:rest))
+   '(define ($name $arg ...) !NL $body)))
 
 ' ; example for define-absorb-lambda
 (define x
@@ -291,29 +296,29 @@
 
 (define-sexprw-tactic splice-begin
   (sexprw-rewrite
-   '(begin %%body)
-   '%%body))
+   '(begin $body:rest)
+   '$body))
 
 (define-sexprw-tactic splice-letrec
   ;; Unsafe, changes scope of $names
   (sexprw-rewrite
-   '(letrec (($name %rhs) ...) %%body)
-   '(!@ (define $name !NL %rhs) !NL) ... %%body)))
+   '(letrec (($name:id $rhs) ...) $body:rest)
+   '(!@ (!@ (define $name !NL $rhs) !NL) ... $body)))
 
 (define-sexprw-tactic splice-empty-let
   ;; Unsafe if %%body contains definitions: changes their scopes
   (sexprw-rewrite
-   '(let () %%body)
-   '%%body))
+   '(let () $body:rest)
+   '$body))
 
 ;; FIXME: would be better to have a case-lambda transformation, reuse
 ;; for define rhs
 (define-sexprw-tactic define-case-lambda-sort-clauses
   (sexprw-rewrite
-   '(define $name (case-lambda (($var ...) %%body) ...))
+   '(define $name:id (case-lambda (($var:id ...) $body:rest) ...))
    '(define $name !NL
       (case-lambda !NL
-        (!@ (!SQ ($sorted-var ...) !NL %%sorted-body) !NL) ...))
+        (!@ (!SQ ($sorted-var ...) !NL $sorted-body) !NL) ...))
    (lambda (env)
      ;; check no $var is a dot (means rest args)
      ;; sort vars and bodies together by length of vars list
@@ -334,7 +339,7 @@
            (t
             (let ((clauses nil)
                   (var-entries (cdr (sexprw-env-ref env '$var)))
-                  (bodies (cdr (sexprw-env-ref env '%%body))))
+                  (bodies (cdr (sexprw-env-ref env '$body))))
               (while var-entries
                 (setq clauses (cons (cons (car var-entries) (car bodies))
                                     clauses))
@@ -349,17 +354,17 @@
                 (setq var-entries (cons (car clause) var-entries))
                 (setq bodies (cons (cdr clause) bodies)))
               (list `(($sorted-var rep ,@var-entries)
-                      (%%sorted-body rep ,@bodies)
+                      ($sorted-body rep ,@bodies)
                       ,@env))))))))
 
 (define-sexprw-tactic define-case-lambda-to-optionals
   (sexprw-rewrite
-   '(define $name
+   '(define $name:id
       (case-lambda
-       (($arg ...) ($uname $arg ... %newarg)) ...
-       (($farg ...) %%body)))
-   '(define ($name $required-arg ... (!SQ $optional-arg %newarg) ...) !NL
-      %%body)
+       (($arg:id ...) ($uname:id $arg:id ... $newarg)) ...
+       (($farg:id ...) $body:rest)))
+   '(define ($name $required-arg ... (!SQ $optional-arg $newarg) ...) !NL
+      $body)
    (lambda (env)
      (let ((failed nil)
            (required-arg-count nil)
@@ -370,9 +375,10 @@
        ;; each $uname is $name (nonlinear pvars don't work here,
        ;; different depths :(
        (dolist ($uname-entry $uname-entries)
-         (unless (equal $uname-entry $name-entry)
+         (unless (sexprw-entry-equal $uname-entry $name-entry)
            ;; (message "$uname %S failed to match $name %S"
            ;;          $uname-entry $name-entry)
+           (sexprw-fail `(...-to-optionals name/uname uname-entry= ,uname-entry name-entry= ,name-entry))
            (setq failed t)))
        ;; each arglist is one shorter than next ($arg names don't have
        ;; to match)
@@ -408,21 +414,24 @@
     [() (f 1)]
     [(x y) (f x y)]))
 
+
+;;  ----- STOPPED around HERE -----
+
 (define-sexprw-tactic define-rest-to-optional/same-name
   ;; See guard
   (sexprw-rewrite
-   '(define ($name $arg ... \. $rest)
-      (let (($rest (if (null? $rest) %default (car $rest)))) %%body))
-   '(define ($name $arg ... (!SQ $rest %default)) !NL %%body)
+   '(define ($name:id $arg:id ... \. $rest:id)
+      (let (($rest:id (if (null? $rest:id) $default (car $rest:id)))) $body:rest))
+   '(define ($name $arg ... (!SQ $rest $default)) !NL $body)
    #'sexprw-define-rest-to-optional-guard))
 
 (define-sexprw-tactic define-rest-to-optional/different-name
-  ;; Unsafe if $rest used elsewhere in %%body
+  ;; Unsafe if $rest used elsewhere in $body
   ;; Also, see guard
   (sexprw-rewrite
-   '(define ($name $arg ... \. $rest)
-      (let (($optional-arg (if (null? $rest) %default (car $rest)))) %%body))
-   '(define ($name $arg ... (!SQ $optional-arg %default)) !NL %%body)
+   '(define ($name:id $arg:id ... \. $rest:id)
+      (let (($optional-arg:id (if (null? $rest:id) $default (car $rest:id)))) $body:rest))
+   '(define ($name $arg ... (!SQ $optional-arg $default)) !NL $body)
    #'sexprw-define-rest-to-optional-guard))
 
 (defun sexprw-define-rest-to-optional-guard (env)
