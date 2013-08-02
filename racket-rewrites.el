@@ -95,8 +95,8 @@
 (define-sexprw-tactic cond-else-absorb-let-if
   ;; Unsafe if $name occurs free in %else
   (sexprw-rewrite
-   '(cond $clause ... (else (let (($name:id $rhs)) (if $name:id $then $else))))
-   '(cond $clause ... !NL
+   '(cond $clauses:rest1 (else (let (($name:id $rhs)) (if $name:id $then $else))))
+   '(cond $clauses !NL
           (!SQ $rhs !NL => (lambda ($name) !NL $then)) !NL
           (!SQ else $else))))
 
@@ -414,9 +414,6 @@
     [() (f 1)]
     [(x y) (f x y)]))
 
-
-;;  ----- STOPPED around HERE -----
-
 (define-sexprw-tactic define-rest-to-optional/same-name
   ;; See guard
   (sexprw-rewrite
@@ -440,8 +437,7 @@
   ;; FIXME: should make %default PURE-SEXP for slightly safer comparison
   (cond ((equal (cadr (sexprw-env-ref env '%default))
                 (cadr (sexprw-env-ref env '$rest)))
-         (list `((%default . (block "'()" nil)) ; FIXME: block?
-                 ,@env)))
+         (list (cons (cons '$default (sexprw-template 'null env)) ,@env)))
         (t (list env))))
 
 ' ; example for define-rest-to-optionals (from SXML)
@@ -449,21 +445,20 @@
   (let ((num-anc (if (null? num-ancestors) 0 (car num-ancestors))))
     (do-stuff-with test-pred? num-anc)))
 
-
 ;; ============================================================
 ;; Specialized rewritings
 ;; Need to be explicitly triggered.
 
 (define-sexprw-tactic split-let
   (sexprw-rewrite
-   '(let (%clause %%more-clauses) %%body)
-   '(let (%clause) !NL (let (%%more-clauses) !NL %%body))))
+   '(let ($clause $more-clauses:rest) $body:rest)
+   '(let ($clause) !NL (let ($more-clauses) !NL $body))))
 
 (define-sexprw-tactic split-let*
   ;; Occasionally useful for eg define-rest-to-optionals
   (sexprw-rewrite 
-   '(let* (%clause %%more-clauses) %%body)
-   '(let (%clause) !NL (let* (%%more-clauses) !NL %%body))))
+   '(let* ($clause $more-clauses:rest) $body:rest)
+   '(let ($clause) !NL (let* ($more-clauses) !NL $body))))
 
 ' ; example for split-let*
 (define (blah . rest)
@@ -471,11 +466,15 @@
          (more (add1 rest)))
     (body)))
 
+(define-sexprw-nt define-like-kw
+  (pattern define)
+  (pattern define-syntax))
+
 (define-sexprw-tactic define-split-lambda
-  ;; Inverse of r-define-absorb-lambda
+  ;; Inverse of define-absorb-lambda
   (sexprw-rewrite
-   '((!AND $define (!OR define define-syntax)) ($name $arg ...) %%body)
-   '($define $name !NL (lambda ($arg ...) !NL %%body))))
+   '($define:define-like-kw ($name:id $arg ...) $body:rest)
+   '($define $name !NL (lambda ($arg ...) !NL $body))))
 
 ' ; example for define-split-lambda
 (define (f x) (or x 1))
@@ -486,8 +485,8 @@
 
 (define-sexprw-tactic eta-expand
   (sexprw-rewrite
-   '%expr
-   '(lambda ($arg ...) %expr)
+   '$expr
+   '(lambda ($arg ...) $expr)
    (lambda (env)
      (let ((argn (read-number "Number of arguments: " 1)))
        (unless (and (integerp argn) (>= argn 0))
@@ -496,12 +495,12 @@
               (cond ((= argn 0)
                      nil)
                     ((= argn 1)
-                     (list (list 'atom "x")))
+                     (list (cons 'pre (sexprw-template 'x nil))))
                     (t
                      (let ((rargs nil))
                        (dotimes (i argn)
-                         (setq rargs (cons (list 'atom (format "x%d" (1+ i)))
-                                           rargs)))
+                         (push (cons 'pre (sexprw-template (intern (format "x%d" (1+ i))) nil))
+                               rargs))
                        (reverse rargs))))))
          (list (cons (cons '$arg (cons 'rep args)) env)))))))
 
