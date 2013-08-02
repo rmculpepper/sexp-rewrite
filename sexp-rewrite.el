@@ -86,6 +86,8 @@ for more details.")
 (define-key sexprw-mode-keymap "w" 'sexprw-kill-rectangular-region)
 (define-key sexprw-mode-keymap "y" 'sexprw-yank-rectangular)
 
+(define-key sexprw-mode-keymap (kbd "M-SPC") 'sexprw-collapse-space/move-sexps)
+
 (define-key sexprw-mode-keymap (kbd "r e")
   (lambda () (interactive) (sexprw-auto-expression 100)))
 (define-key sexprw-mode-keymap (kbd "r d")
@@ -1182,7 +1184,7 @@ after the first so the sexp will be properly indented when
       (error "No sexp at point"))
     (let* ((start (nth 1 next))
            (end (nth 3 next))
-           (rect (sexprw-rectangle (buffer-filter-substring start end))))
+           (rect (sexprw-rectangle (filter-buffer-substring start end))))
       (unless rect
         (error "Non-rectangular sexp at point"))
       (let ((text (mapconcat 'identity rect "\n")))
@@ -1195,12 +1197,12 @@ The region must be rectangular. Whitespace is removed from lines
 after the first so the sexp will be properly indented when
 `yank'ed at column 0 or yanked via `sexprw-yank-rectangular'."
   (interactive "r")
-  (let ((text (buffer-filter-substring start end))
+  (let ((text (filter-buffer-substring start end))
         (start-col (save-excursion
                      (save-restriction
                        (widen)
                        (goto-char start)
-                       (- start (beginning-of-line))))))
+                       (- start (line-beginning-position))))))
     (let ((rect (sexprw-rectangle text start-col)))
       ;; (message "rect = %S" rect)
       (unless rect 
@@ -1358,6 +1360,27 @@ Each CLAUSE has the form (pattern PATTERN [GUARD])."
                       (and (sexprw-skip-forward-to-n-sexps-before-end 1)
                            (let ((b (sexprw-range-to-block init-point nil (point))))
                              (list (list (cons '$ b)))))))))
+
+;; ============================================================
+
+(defun sexprw-collapse-space/move-sexps (count)
+  "Collapse space after point, moving COUNT (or all) following sexps.
+If COUNT is nil, moves all following sexps."
+  (interactive "P")
+  (when (consp count) (setq count (car count)))
+  (unless (integerp count) (setq count nil))
+  (save-excursion
+    (let ((init-point (point)))
+      (sexprw-skip-whitespace) 
+      (let ((start (point)))
+        (cond (count (ignore-errors (dotimes count (forward-sexp))))
+              (t (up-list)))
+        (end-of-line) ;; get trailing close-parens too, if on same line
+        (let ((end (point)))
+          (sexprw-kill-rectangular-region start end)
+          (delete-and-extract-region init-point start)
+          (goto-char init-point) ;; FIXME: redundant?
+          (sexprw-yank-rectangular))))))
 
 ;; ============================================================
 
