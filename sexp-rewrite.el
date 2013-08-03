@@ -254,6 +254,7 @@ Customizable via the variable `sexprw-auto-definition-tactics'."
 
 (defun sexprw-compute-rewrite/ast (pattern template &optional guard)
   ;; (message "pattern = %S" pattern)
+  ;; (message "template = %S" template)
   (let ((env (sexprw-match pattern)))
     ;; (message "point = %S" (point))
     ;; (message "env = %S" env)
@@ -331,6 +332,7 @@ Customizable via the variable `sexprw-auto-definition-tactics'."
 ;;      | (!SQ PT*)      ~ (SQLIST T*)
 ;;      | !NL            ~ (NL)
 ;;      | !SP            ~ (SP)
+;;      | !SL            ~ (SL)
 ;;      | (!REP PT vars) ~ (tREP T vars)
 ;;      | PT ...         ~ (tREP T nil)        ; vars=nil means "auto"
 
@@ -383,6 +385,8 @@ Customizable via the variable `sexprw-auto-definition-tactics'."
            '(NL))
           ((and template (eq pretty '!SP))
            '(SP))
+          ((and template (eq pretty '!SL))
+           '(SL))
           ((eq pretty '...)
            (error "Misplaced ellipses: %S" pretty))
           ((string-match "^[!]" name)
@@ -688,7 +692,7 @@ of matched term(s)."
                                    (sexprw-pattern-variables (nth 2 pattern) onto)))
         ((eq (car pattern) 'tREP)
          (sexprw-pattern-variables (nth 1 pattern) onto))
-        ((memq (car pattern) '(quote SP NL))
+        ((memq (car pattern) '(quote SP NL SL))
          onto)
         (t (error "Bad pattern: %S" pattern))))
 
@@ -873,10 +877,22 @@ guard body."
 ;;     | (SPLICE T*)     ; spliced list contents
 ;;     | (SP)            ; latent space (ie, change latent newline to latent
 ;;     |                 ; space)
+
+;;     | (SL)            ; latent "soft" newline: if surrounding list has any 
+;;                       ; NLs or multi-line blocks, NL, else ignore
 ;;     | (NL)            ; latent newline
 ;;     | (tREP T vars)   ; repetition
 ;;
-;; PreOutput = (treeof (U string 'SP 'NL 'NONE (cons 'RECT listofstring)))
+;; PreOutput = (treeof PreOutputPart)
+;; PreOutputPart =
+;;   - string
+;;   - 'SP
+;;   - 'NL
+;;   - 'SL
+;;   - 'NONE
+;;   - (cons 'RECT listofstring)
+;;   - (cons 'SL=nil PreOutput)
+;;   - (cons 'SL=NL PreOutput)
 ;; Interpret PreOutput left to right; *last* spacing symbol to occur wins.
 ;;
 ;; Output = (listof (U string 'NL (cons 'RECT listofstring)))
@@ -884,6 +900,10 @@ guard body."
 (defun sexprw-template (template env)
   "Produces (cons 'pre PreOutput) for given TEMPLATE and ENV."
   (cons 'pre (sexprw-template* (sexprw-desugar-pattern template t) env)))
+
+;; sexprw-template*-multiline : boolean, fluid
+;; Set when (hard) NL or multi-line block occurs in current LIST/SQLIST.
+(defvar sexprw-template*-multiline nil) ;; fluid
 
 (defun sexprw-template* (template env)
   "Interprets core TEMPLATE using the pattern variables of ENV."
@@ -897,24 +917,24 @@ guard body."
                'SP))
         ((eq (car template) 'VAR)
          (sexprw-template-var (cadr template) env))
-        ((eq (car template) 'LIST)
-         (list "("
-               (sexprw-template-list-contents (cdr template) env)
-               'NONE
-               ")"
-               'SP))
-        ((eq (car template) 'SQLIST)
-         (list "["
-               (sexprw-template-list-contents (cdr template) env)
-               'NONE
-               "]"
-               'SP))
+        ((memq (car template) '(LIST SQLIST))
+         (let ((open (if (eq (car template) 'LIST) "(" "["))
+               (close (if (eq (car template) 'LIST) ")" "]"))
+               (multiline nil))
+           (let ((contents
+                  (let ((sexprw-template*-multiline nil)) ;; fluid-let
+                    (prog1 (sexprw-template-list-contents (cdr template) env)
+                      (setq multiline sexprw-template*-multiline)))))
+             (when multiline (setq sexprw-template*-multiline t))
+             (list open
+                   (cons (if multiline 'SL=NL 'SL=nil) contents)
+                   'NONE
+                   close
+                   'SP))))
         ((eq (car template) 'SPLICE)
          (sexprw-template-list-contents (cdr template) env))
-        ((eq (car template) 'SP)
-         'SP)
-        ((eq (car template) 'NL)
-         'NL)
+        ((memq (car template) '(SP NL SL))
+         (car template))
         ((eq (car template) 'tREP)
          (sexprw-template-rep template env))))
 
@@ -976,6 +996,8 @@ guard body."
              (let ((text (sexprw-block-text value))
                    (rect (sexprw-block-rectangle value))
                    (space (if (sexprw-block-onelinep value) 'SP 'NL)))
+               (unless (sexprw-block-onelinep value)
+                 (setq sexprw-template*-multiline t))
                (cond ((zerop (length text))
                       ;; no space after empty block
                       null)
@@ -1002,13 +1024,23 @@ guard body."
   (let* ((result (sexprw-output* pre nil 'NONE))
          (raccum (car result))
          (latent (cdr result)))
-    (reverse raccum)))
+    (let ((sexprw-output*-SL nil)) ;; fluid-let
+      (reverse raccum))))
+
+;; sexprw-output*-SL : (U nil 'NL), fluid
+(defvar sexprw-output*-SL nil)
 
 (defun sexprw-output* (pre raccum latent)
   (cond ((and (consp pre) (eq (car pre) 'RECT))
          (let* ((raccum (cons (sexprw-output*-spacing latent) raccum))
                 (raccum (cons pre raccum)))
            (cons raccum 'NONE)))
+        ((and (consp pre) (eq (car pre) 'SL=nil))
+         (let ((sexprw-output*-SL nil)) ;; fluid-let
+           (sexprw-output* (cdr pre) raccum latent)))
+        ((and (consp pre) (eq (car pre) 'SL=NL))
+         (let ((sexprw-output*-SL 'NL)) ;; fluid-let
+           (sexprw-output* (cdr pre) raccum latent)))
         ((consp pre)
          (let ((result (sexprw-output* (car pre) raccum latent)))
            (sexprw-output* (cdr pre) (car result) (cdr result))))
@@ -1019,7 +1051,8 @@ guard body."
         ((null pre)
          (cons raccum latent))
         ((symbolp pre)
-         (cons raccum pre))
+         (cons raccum
+               (if (eq pre 'SL) (or sexprw-output*-SL latent) pre)))
         (t
          (error "Bad pre-output: %S" pre))))
 

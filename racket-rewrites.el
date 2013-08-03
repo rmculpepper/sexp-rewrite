@@ -72,7 +72,8 @@
         (let ((y (h x)))
           (if y
               (k y)
-              0))))
+              (+ 0
+                 1)))))
 
 (define-sexprw-tactic cond-else-absorb-cond
   (sexprw-rewrite
@@ -82,23 +83,23 @@
 (define-sexprw-tactic cond-else-absorb-if
   (sexprw-rewrite
    '(cond $clauses:rest1 (else (if $test $then $else)))
-   '(cond $clauses !NL (!SQ $test $then) !NL (!SQ else $else))))
+   '(cond $clauses !NL (!SQ $test !SL $then) !NL (!SQ else !SL $else))))
 
 (define-sexprw-tactic let-if-to-cond
   ;; Unsafe if $name occurs free in $else
   (sexprw-rewrite
    '(let (($name:id $rhs))
       (if $name:id $then $else))
-   '(cond (!SQ $rhs !NL => (lambda ($name) !NL $then)) !NL
-          (!SQ else !NL $else))))
+   '(cond (!SQ $rhs !SL => (lambda ($name) !SL $then)) !NL
+          (!SQ else !SL $else))))
 
 (define-sexprw-tactic cond-else-absorb-let-if
   ;; Unsafe if $name occurs free in %else
   (sexprw-rewrite
    '(cond $clauses:rest1 (else (let (($name:id $rhs)) (if $name:id $then $else))))
    '(cond $clauses !NL
-          (!SQ $rhs !NL => (lambda ($name) !NL $then)) !NL
-          (!SQ else $else))))
+          (!SQ $rhs !SL => (lambda ($name) !SL $then)) !NL
+          (!SQ else !SL $else))))
 
 ' ; example for let-if-to-cond
 (let ([x (assq key alist)])
@@ -112,19 +113,14 @@
       (cdr x)
       (error 'no-key)))
 
-(define-sexprw-tactic letrec-to-definitions
-  (sexprw-rewrite
-   '(letrec (($name:id $rhs) ...) $body:rest)
-   '(let () !NL (!@ (define $name $rhs) !NL) ... $body)))
-
 (define-sexprw-nt let-clause
   :attributes ($def)
   (pattern ($name:id (lambda ($arg ...) $body:rest))
-           :with $def (define ($name $arg ...) !NL $body))
+           :with $def (define ($name $arg ...) !SL $body))
   (pattern ($name:id $rhs)
-           :with $def (define $name !NL $rhs)))
+           :with $def (define $name !SL $rhs)))
 
-(define-sexprw-tactic letrec-to-definitions2
+(define-sexprw-tactic letrec-to-definitions
   (sexprw-rewrite
    '(letrec ($c:let-clause ...) $body:rest)
    '(let () !NL (!@ $c.$def !NL) ... $body)))
@@ -133,13 +129,31 @@
 (letrec ([odd? (lambda (x) (not (even? x)))]
          [even? (lambda (x) (or (zero? x) (even? (sub1 x))))])
   odd?)
+  
+' ; another example for letrec-to-definitions
+(letrec ([odd? (lambda (x) (not (even? x)))]
+         [even? (lambda (x)
+                  (or (zero? x)
+                      (even? (sub1 x))))])
+  odd?)
+
+(define-sexprw-tactic let-to-definitions
+  ;; Unsafe if any %rhs has free occurrences of any $name, or if %%body
+  ;; contains definitions of some $x where $x collides with some $name
+  ;; or if $x occurs free in any %rhs.
+  (sexprw-rewrite
+   '(let ($c:let-clause ...) $body:rest)
+   '(let () !NL (!@ $c.$def !NL) ... $body)))
+
+' ; example for let-to-definitions
+(let ((x 1) (y 2)) (+ x y))
 
 (define-sexprw-tactic let-loop-to-definition
   ;; Unsafe if $name occurs free in %init
   (sexprw-rewrite
    '(let $loop:id (($arg:id $init) ...) $body:rest)
    '(let () !NL
-      (define ($loop $arg ...) !NL
+      (define ($loop $arg ...) !SL
         $body)
       !NL
       ($loop $init ...))))
@@ -147,7 +161,7 @@
 ;; Would be nice to recognize potential 'for' loops,
 ;; but needs a lot more information than we have here.
 
-' ; example for let loop
+' ; example for let-loop-to-definition
 (let loop ([rejected 0] [racc '()] [lst the-stuff])
   (cond [(pair? lst)
          (if (ok? (car lst))
@@ -155,17 +169,6 @@
              (loop (add1 count) racc (cdr lst)))]
         [else
          (values rejected (reverse racc))]))
-
-(define-sexprw-tactic let-to-definitions
-  ;; Unsafe if any %rhs has free occurrences of any $name, or if %%body
-  ;; contains definitions of some $x where $x collides with some $name
-  ;; or if $x occurs free in any %rhs.
-  (sexprw-rewrite
-   '(let (($name:id $rhs) ...) $body:rest)
-   '(let () !NL (!@ (define $name $rhs) !NL) ... $body)))
-
-' ; example for let-to-definitions
-(let ((x 1) (y 2)) (+ x y))
 
 ;; let/let* absorption requires single-clause lets; unsafe otherwise
 ;; (changes scoping)
@@ -488,7 +491,7 @@
 (define-sexprw-tactic eta-expand
   (sexprw-rewrite
    '$expr
-   '(lambda ($arg ...) $expr)
+   '(lambda ($arg ...) !SL $expr)
    (lambda (env)
      (let ((argn (read-number "Number of arguments: " 1)))
        (unless (and (integerp argn) (>= argn 0))
@@ -508,3 +511,7 @@
 
 ' ; example for eta-expand
 add1
+
+' ; another example for eta-expand
+(compose foo
+         bar)
