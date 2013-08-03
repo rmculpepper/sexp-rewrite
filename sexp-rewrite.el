@@ -882,8 +882,8 @@ guard body."
 ;; Output = (listof (U string 'NL (cons 'RECT listofstring)))
 
 (defun sexprw-template (template env)
-  "Produces PreOutput for TEMPLATE and ENV."
-  (sexprw-template* (sexprw-desugar-pattern template t) env))
+  "Produces (cons 'pre PreOutput) for given TEMPLATE and ENV."
+  (cons 'pre (sexprw-template* (sexprw-desugar-pattern template t) env)))
 
 (defun sexprw-template* (template env)
   "Interprets core TEMPLATE using the pattern variables of ENV."
@@ -973,13 +973,18 @@ guard body."
       (error "No entry for pvar '%s'" pvar))
     (let ((value (cdr entry)))
       (cond ((and (consp value) (eq (car value) 'block))
-             (list nil ;; (if (sexprw-block-onelinep value) nil 'NL) ; FIXME?
-                   (let ((rect (sexprw-block-rectangle value)))
-                     (if rect
-                         (cons 'RECT rect)
-                       (sexprw-block-text value)))
-                   (if (sexprw-block-onelinep value) 'SP 'NL)))
+             (let ((text (sexprw-block-text value))
+                   (rect (sexprw-block-rectangle value))
+                   (space (if (sexprw-block-onelinep value) 'SP 'NL)))
+               (cond ((zerop (length text))
+                      ;; no space after empty block
+                      null)
+                     (rect
+                      (list (cons 'RECT rect) space))
+                     (t
+                      (list text space)))))
             ((and (consp value) (eq (car value) 'pre))
+             ;; 'pre entry should already include trailing space
              (cdr value))
             ((and (consp value) (eq (car value) 'rep))
              (error "Depth error for pvar '%s'; value is: %S" pvar value))
@@ -1287,7 +1292,7 @@ Each CLAUSE has the form (pattern PATTERN [GUARD])."
                     (with-guard
                      `(lambda (env)
                         (let ((pre (sexprw-template ',template env)))
-                          (list (cons (cons ',pvar (cons 'pre pre)) env))))))
+                          (list (cons (cons ',pvar pre) env))))))
                (setq pattern `(GUARD ,pattern ,with-guard))
                (setq parts (nthcdr 3 parts))))
             (t

@@ -418,7 +418,8 @@
   ;; See guard
   (sexprw-rewrite
    '(define ($name:id $arg:id ... \. $rest:id)
-      (let (($rest:id (if (null? $rest:id) $default (car $rest:id)))) $body:rest))
+      (let (($rest:id (if (null? $rest:id) $default (car $rest:id))))
+        $body:rest))
    '(define ($name $arg ... (!SQ $rest $default)) !NL $body)
    #'sexprw-define-rest-to-optional-guard))
 
@@ -427,7 +428,8 @@
   ;; Also, see guard
   (sexprw-rewrite
    '(define ($name:id $arg:id ... \. $rest:id)
-      (let (($optional-arg:id (if (null? $rest:id) $default (car $rest:id)))) $body:rest))
+      (let (($optional-arg:id (if (null? $rest:id) $default (car $rest:id))))
+        $body:rest))
    '(define ($name $arg ... (!SQ $optional-arg $default)) !NL $body)
    #'sexprw-define-rest-to-optional-guard))
 
@@ -495,11 +497,11 @@
               (cond ((= argn 0)
                      nil)
                     ((= argn 1)
-                     (list (cons 'pre (sexprw-template 'x nil))))
+                     (list (sexprw-template 'x nil)))
                     (t
                      (let ((rargs nil))
                        (dotimes (i argn)
-                         (push (cons 'pre (sexprw-template (intern (format "x%d" (1+ i))) nil))
+                         (push (sexprw-template (intern (format "x%d" (1+ i))) nil)
                                rargs))
                        (reverse rargs))))))
          (list (cons (cons '$arg (cons 'rep args)) env)))))))
