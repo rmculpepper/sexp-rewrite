@@ -728,8 +728,8 @@ On success, advances point to end of sexp."
                     (= nonws-point start-point))
                 (progn
                   (goto-char end-point)
-                  (sexprw-range-to-block start-point 
-                                         nonws-point
+                  (sexprw-range-to-block nonws-point
+                                         start-point
                                          end-point)))))))
 
 (defun sexprw-range-to-block (start pure-start end)
