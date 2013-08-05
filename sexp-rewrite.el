@@ -5,7 +5,7 @@
 ;;; see the text after `sexprw-legal-notice' for details.
 
 (defconst sexprw-copyright    "Copyright 2013 Ryan Culpepper")
-(defconst sexprw-version      "0.01")
+(defconst sexprw-version      "0.02")
 (defconst sexprw-author-name  "Ryan Culpepper")
 (defconst sexprw-author-email "ryanc@racket-lang.org")
 (defconst sexprw-web-page     "https://github.com/rmculpepper/sexp-rewrite")
@@ -36,11 +36,6 @@ for more details.")
 ;;   - require guard extends env?
 ;;   - add ranges back to block matches
 ;;     - might be useful for recursive processing ??
-;; - generalize (pattern guard template) triples
-;;   - add procedure template escape (produces PreOutput)
-;;   - to allow PGT triples to occur in patterns
-;;     allow recursive processing... 
-;;     use cases: cond-else-{if,cond} absorbtion, letrec-to-definitions
 ;; - package nicely in Emacs idiom
 ;;   - minor mode ??
 ;;   - make sure keybindings are added politely
@@ -48,13 +43,6 @@ for more details.")
 ;; - tweak whitespace handling ??
 ;; - hook for scan-sexps replacement
 ;; - hook for scan-whitespace, scan-comments replacements
-;; - new spacing rule (in PreOutput): NL*
-;;   - acts as NL if *previous template* contained/generated an NL
-;;     or alternatively, if any surrounding template contained/generated NL
-;;     (will have to figure out how to track that property)
-;;     Alternatively, could have LIST, SQLIST just compute & insert
-;;     SP vs NL as latent... but that would move interp. of adjacent 
-;;     spacing directives into PreOutput pass rather than output pass.
 ;; - custom var to disable square brackets (use parens instead)
 ;; - build "tactic apropos"---search by literals in tactic pattern & template
 ;; - more interactive/flexible rewriting
