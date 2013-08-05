@@ -365,8 +365,9 @@ Customizable via the variable `sexprw-auto-definition-tactics'."
           ((string-match "^\\([$][_[:alpha:]][^:]*\\):\\([[:alpha:]].*\\)$" name)
            (let ((var (intern (match-string 1 name)))
                  (nt (intern (match-string 2 name))))
-             (unless (sexprw-nt-symbolp nt)
-               (error "Bad pattern variable, no such sexpr-rewrite nonterminal: %S" pretty))
+             (when nil ;; too early, prevents mutually recursive nts, forward refs, etc.
+               (unless (sexprw-nt-symbolp nt)
+                 (error "Bad pattern variable, no such sexpr-rewrite nonterminal: %S" pretty)))
              `(VAR ,var ,nt)))
           ((string-match "^[$]" name)
            (error "Bad pattern variable: %S" pretty))
@@ -512,6 +513,8 @@ of matched term(s)."
   result)
 
 (defun sexprw-match-var (pvar nt)
+  (unless (sexprw-nt-symbolp nt)
+    (error "Not defined as sexp-rewrite nt: %S" nt))
   (sexprw-skip-whitespace)
   (let* ((init-point (point))
          (nt-val (sexprw-nt-value nt))
