@@ -230,11 +230,11 @@ Customizable via the variable `sexprw-auto-definition-tactics'."
              t)))))
 
 (defun sexprw-compute-rewrite/ast (pattern template &optional guard)
-  (message "pattern = %S" pattern)
-  (message "template = %S" template)
+  ;; (message "pattern = %S" pattern)
+  ;; (message "template = %S" template)
   (let ((env (sexprw-match pattern)))
     ;; (message "point = %S" (point))
-    (message "env = %S" env)
+    ;; (message "env = %S" env)
     (and env
          (sexprw-check-nonlinear-patterns (car env))
          (let ((env* (if guard (funcall guard (car env)) env)))
@@ -247,14 +247,14 @@ Customizable via the variable `sexprw-auto-definition-tactics'."
                          (template-error 
                           (sexprw-fail `(template ,error-info guard-env=
                                                   ,(car env*)))))))
-                  (message "preoutput = %S" preoutput)
+                  ;; (message "preoutput = %S" preoutput)
                   (and preoutput
                        (let ((output
                               (condition-case error-info
                                   (sexprw-output preoutput)
                                 (template-error
                                  (sexprw-fail `(output ,error-info))))))
-                         (message "output = %S" output)
+                         ;; (message "output = %S" output)
                          output))))))))
 
 ;; FIXME: here's another quadratic function...
