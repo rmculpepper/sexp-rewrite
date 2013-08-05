@@ -306,6 +306,10 @@ Customizable via the variable `sexprw-auto-definition-tactics'."
          '(LIST))
         ((symbolp pretty)
          (sexprw-desugar-pattern-symbol pretty template))
+        ((vectorp pretty)
+         (if template
+             (cons 'SQLIST (sexprw-desugar-pattern-list (append pretty nil) template))
+           (cons 'LIST (sexprw-desugar-pattern-list (append pretty nil) template))))
         ((not (consp pretty))
          (error "Bad %s: %S" (if template "template" "pattern") pretty))
         ((memq (car pretty) '(!@ !SPLICE))

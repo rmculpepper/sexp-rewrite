@@ -60,8 +60,8 @@
 
 (define-sexprw-tactic if-to-cond
   (if $test $then $else)
-  (cond (!SQ $test $then) !NL
-        (!SQ else $else)))
+  (cond [$test $then] !NL
+        [else $else]))
 
 ' ; example for if-to-cond, cond-else-absorb-*
 (if (< x 10)
@@ -75,27 +75,27 @@
                  1)))))
 
 (define-sexprw-tactic cond-else-absorb-cond
-  (cond $clauses:rest1 (else (cond $more:rest)))
+  (cond $clauses:rest1 [else (cond $more:rest)])
   (cond $clauses !NL $more))
 
 (define-sexprw-tactic cond-else-absorb-if
-  (cond $clauses:rest1 (else (if $test $then $else)))
-  (cond $clauses !NL (!SQ $test !SL $then) !NL (!SQ else !SL $else)))
+  (cond $clauses:rest1 [else (if $test $then $else)])
+  (cond $clauses !NL [$test !SL $then] !NL [else !SL $else]))
 
 (define-sexprw-tactic let-if-to-cond
   ;; Unsafe if $name occurs free in $else
-  (let (($name:id $rhs))
+  (let ([$name:id $rhs])
     (if $name:id $then $else))
-  (cond (!SQ $rhs !SL => (lambda ($name) !SL $then)) !NL
-        (!SQ else !SL $else)))
+  (cond [$rhs !SL => (lambda ($name) !SL $then)] !NL
+        [else !SL $else]))
 
 (define-sexprw-tactic cond-else-absorb-let-if
   ;; Unsafe if $name occurs free in %else
   (cond $clauses:rest1
-        (else (let (($name:id $rhs)) (if $name:id $then $else))))
+        [else (let ([$name:id $rhs]) (if $name:id $then $else))])
   (cond $clauses !NL
-        (!SQ $rhs !SL => (lambda ($name) !SL $then)) !NL
-        (!SQ else !SL $else)))
+        [$rhs !SL => (lambda ($name) !SL $then)] !NL
+        [else !SL $else]))
 
 ' ; example for let-if-to-cond
 (let ([x (assq key alist)])
@@ -111,9 +111,9 @@
 
 (define-sexprw-nt let-clause
   :attributes ($def)
-  (pattern ($name:id (lambda ($arg ...) $body:rest))
+  (pattern [$name:id (lambda ($arg ...) $body:rest)]
            :with $def (define ($name $arg ...) !SL $body))
-  (pattern ($name:id $rhs)
+  (pattern [$name:id $rhs]
            :with $def (define $name !SL $rhs)))
 
 (define-sexprw-tactic letrec-to-definitions
@@ -166,11 +166,11 @@
 ;; let/let* absorption requires single-clause lets; unsafe otherwise
 ;; (changes scoping)
 (define-sexprw-tactic let-absorb-let*
-  (let (($var:id $rhs)) (let* ($clauses:rest) $body:rest))
-  (let* ((!SQ $var $rhs) !NL $clauses) !NL $body))
+  (let ([$var:id $rhs]) (let* ($clauses:rest) $body:rest))
+  (let* ([$var $rhs] !NL $clauses) !NL $body))
 (define-sexprw-tactic let*-absorb-let
-  (let* ($clauses:rest) (let (($var:id $rhs)) $body:rest))
-  (let* ($clauses !NL (!SQ $var $rhs)) !NL $body))
+  (let* ($clauses:rest) (let ([$var:id $rhs]) $body:rest))
+  (let* ($clauses !NL [$var $rhs]) !NL $body))
 
 ' ; example for let-absorb-let*, let*-absorb-let
 (let ((x 1))
@@ -201,7 +201,7 @@
 (defmacro define-sexprw-*map-tactic (name map-sym for-sym)
   `(define-sexprw-tactic ,name
      (,map-sym (lambda ($arg:id ...) $body:rest) $lst:list-expr ...)
-     (,for-sym ((!@ (!SQ $arg $lst.$for-rhs) !NL) ...) !NL $body)))
+     (,for-sym ((!@ [$arg $lst.$for-rhs] !NL) ...) !NL $body)))
 
 (define-sexprw-*map-tactic map      map      for/list)
 (define-sexprw-*map-tactic for-each for-each for)
@@ -221,8 +221,8 @@
 
 (define-sexprw-tactic foldl
   (foldl (lambda ($arg:id ... $accum:id) $body:rest) $init $lst ...)
-  (for/fold ((!SQ $accum $init)) !NL
-            ((!@ (!SQ $arg (in-list $lst)) !NL) ...) !NL
+  (for/fold ([$accum $init]) !NL
+            ((!@ [$arg (in-list $lst)] !NL) ...) !NL
     $body))
 
 ' ; example for foldl
@@ -239,11 +239,11 @@
 
 (define-sexprw-tactic build-list
   (build-list $n (lambda ($arg:id) $body:rest))
-  (for/list ((!SQ $arg (in-range $n))) !NL $body))
+  (for/list ([$arg (in-range $n)]) !NL $body))
 
 (define-sexprw-tactic for/sum-from-map
   (apply + (map (lambda ($arg:id ...) $body:rest) $lst ...))
-  (for/sum ((!@ (!SQ $arg:id (in-list $lst)) !NL) ...) !NL $body))
+  (for/sum ((!@ [$arg:id (in-list $lst)] !NL) ...) !NL $body))
 
 (define-sexprw-tactic for/sum-from-for/list
   (apply + (for/list $body:rest))
@@ -339,7 +339,7 @@
                      ,@env))))))
   ;; template:
   (case-lambda !NL
-    (!@ (!SQ ($sorted-var ...) !NL $sorted-body) !NL) ...))
+    (!@ [($sorted-var ...) !NL $sorted-body] !NL) ...))
 
 (define-sexprw-tactic define-case-lambda-sort-clauses
   (define $name:id $body:case-lambda-sort-clauses)
@@ -417,7 +417,7 @@
                             (sexprw-env-ref env '$rest))
         (list (cons (cons '$default (sexprw-template 'null env)) env))
       (list env)))
-  (define ($name $arg ... (!SQ $optional-arg $default)) !NL $body))
+  (define ($name $arg ... [$optional-arg $default]) !NL $body))
 
 ' ; example for define-rest-to-optionals (from SXML)
 (define (ddo:ancestor test-pred? . num-ancestors)
@@ -462,7 +462,7 @@
 
 (define-sexprw-tactic beta-to-let
   ((lambda ($arg:id ...) $body:rest) $val ...)
-  (let ((!@ (!SQ $arg $val) !SL) ...) !SL $body))
+  (let ((!@ [$arg $val] !SL) ...) !SL $body))
 
 ' ;; example for beta-to-let
 ((lambda (x)
