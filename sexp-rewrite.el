@@ -158,9 +158,10 @@ Customizable via the variable `sexprw-auto-definition-tactics'."
 ;; reverse order
 
 (defun sexprw-run-tactic (tactic-name)
-  (let* ((tactic (sexprw-tactic-value tactic-name)))
+  (let* ((nt-val (sexprw-nt-value tactic-name))
+         (nt-pattern (nth 1 nt-val)))
     (and (let ((sexprw-current-operation `(tactic ,tactic-name))) ; fluid-let
-           (funcall tactic))
+           (sexprw-rewrite/ast nt-pattern '(VAR $out)))
          (list tactic-name))))
 
 (defun sexprw-run-tactics-until-success (tactics &optional times0 respect-disabled)
@@ -178,30 +179,6 @@ Customizable via the variable `sexprw-auto-definition-tactics'."
               (setq rused (cons tactic rused))))))
       (unless success (setq times 0)))
     rused))
-
-;; sexp-rewrite tactic names have property 'sexprw-tactic
-
-(defmacro define-sexprw-tactic (name tactic)
-  "Define NAME as a sexp-rewrite tactic specified by TACTIC."
-  (unless (and name (symbolp name))
-    (error "define-sexprw-tactic: expected symbol for NAME, got: %S" name))
-  `(progn (put ',name 'sexprw-tactic (lambda () ,tactic)) ',name))
-
-(defun sexprw-tactic-symbolp (sym)
-  (and (get sym 'sexprw-tactic) t))
-
-(defun sexprw-tactic-value (sym)
-  (or (and (symbolp sym) (get sym 'sexprw-tactic))
-      (error "Not a sexp-rewrite tactic name: %S" sym)))
-
-(defun sexprw-read-tactic-from-minibuffer (&optional prompt history)
-  (intern
-   (completing-read (or prompt "Tactic: ")
-                    obarray
-                    'sexprw-tactic-symbolp
-                    t
-                    nil
-                    (or history 'sexprw-tactic-symbolp))))
 
 ;; ============================================================
 ;; Debugging and diagnostics
@@ -253,11 +230,11 @@ Customizable via the variable `sexprw-auto-definition-tactics'."
              t)))))
 
 (defun sexprw-compute-rewrite/ast (pattern template &optional guard)
-  ;; (message "pattern = %S" pattern)
-  ;; (message "template = %S" template)
+  (message "pattern = %S" pattern)
+  (message "template = %S" template)
   (let ((env (sexprw-match pattern)))
     ;; (message "point = %S" (point))
-    ;; (message "env = %S" env)
+    (message "env = %S" env)
     (and env
          (sexprw-check-nonlinear-patterns (car env))
          (let ((env* (if guard (funcall guard (car env)) env)))
@@ -270,14 +247,14 @@ Customizable via the variable `sexprw-auto-definition-tactics'."
                          (template-error 
                           (sexprw-fail `(template ,error-info guard-env=
                                                   ,(car env*)))))))
-                  ;; (message "preoutput = %S" preoutput)
+                  (message "preoutput = %S" preoutput)
                   (and preoutput
                        (let ((output
                               (condition-case error-info
                                   (sexprw-output preoutput)
                                 (template-error
                                  (sexprw-fail `(output ,error-info))))))
-                         ;; (message "output = %S" output)
+                         (message "output = %S" output)
                          output))))))))
 
 ;; FIXME: here's another quadratic function...
@@ -1275,8 +1252,7 @@ at the same column as the first line."
 ;; with value (list 'nt P attrs docstring), where attrs is list of symbol
 
 (defmacro define-sexprw-nt (name &rest clauses)
-  "Define NAME as a sexp-rewrite nonterminal specified by the CLAUSES.
-Each CLAUSE has the form (pattern PATTERN [GUARD])."
+  "Define NAME as a sexp-rewrite nonterminal specified by the CLAUSES."
   `(progn (put ',name 'sexprw-nt (sexprw-parse-nt-def 'name ',clauses)) ',name))
 
 (defun sexprw-parse-nt-def (name clauses)
@@ -1306,20 +1282,30 @@ Each CLAUSE has the form (pattern PATTERN [GUARD])."
                  (eq (car parts) 'pattern)
                  (>= (length parts) 2))
       (error "Bad sexp-rewrite nonterminal clause: %S" clause))
-    (setq pattern (sexprw-desugar-pattern (cadr parts) nil))
-    (setq parts (cddr parts))
-    (while parts
-      (unless (keywordp (car parts))
+    (let ((pattern+parts (sexprw-parse-pattern+clauses (cdr parts) clause)))
+      (setq pattern (car pattern+parts))
+      (setq parts (cdr pattern+parts))
+      (when parts
         (error "Bad clause options: %S" clause))
+      pattern)))
+
+(defun sexprw-parse-pattern+clauses (parts whole)
+  ;; Returns (cons pattern leftover-parts)
+  (let ((pattern nil))
+    (unless (consp parts)
+      (error "Missing pattern: %S" whole))
+    (setq pattern (sexprw-desugar-pattern (car parts) nil))
+    (setq parts (cdr parts))
+    (while (and parts (keywordp (car parts)))
       (cond ((eq (car parts) ':guard)
              (unless (>= (length parts) 2)
-               (error "Bad :guard option: %S" clause))
+               (error "Missing expression for :guard option: %S" whole))
              (setq pattern `(GUARD ,pattern ,(nth 1 parts)))
              (setq parts (nthcdr 2 parts)))
             ((eq (car parts) ':with)
              ;; FIXME: support (pvar ...), etc
              (unless (>= (length parts) 3)
-               (error "Bad :with option: %S" clause))
+               (error "Missing variable or template for :with option: %S" whole))
              (let* ((pvar (nth 1 parts))
                     (template (nth 2 parts))
                     (with-guard
@@ -1330,7 +1316,7 @@ Each CLAUSE has the form (pattern PATTERN [GUARD])."
                (setq parts (nthcdr 3 parts))))
             (t
              (error "Bad clause option keyword: %S" (car parts)))))
-    pattern))
+    (cons pattern parts)))
 
 (defun sexprw-nt-symbolp (sym)
   (and (get sym 'sexprw-nt) t))
@@ -1338,6 +1324,49 @@ Each CLAUSE has the form (pattern PATTERN [GUARD])."
 (defun sexprw-nt-value (sym)
   (or (and (symbolp sym) (get sym 'sexprw-nt))
       (error "Not a sexp-rewrite nt name: %S" sym)))
+
+;; ============================================================
+
+;; A sexp-rewrite tactic name is an nt that that defines $out and also
+;; has the property 'sexprw-tactic.
+
+(defmacro define-sexprw-tactic (name &rest parts)
+  "Define NAME as a sexprw-rewrite tactic."
+  (unless (and name (symbolp name))
+    (error "define-sexprw-tactic: expected symbol for NAME, got: %S" name))
+  `(progn (put ',name 'sexprw-nt (sexprw-parse-tactic-defn ',name ',parts))
+          (put ',name 'sexprw-tactic t)
+          ',name))
+
+(defun sexprw-tactic-symbolp (sym)
+  (and (get sym 'sexprw-tactic) t))
+
+(defun sexprw-parse-tactic-defn (name parts)
+  (let* ((whole (cons 'define-sexprw-tactic (cons name parts)))
+         (pattern+parts (sexprw-parse-pattern+clauses parts whole))
+         (pattern (car pattern+parts))
+         (template nil))
+    (setq parts (cdr pattern+parts))
+    (unless parts
+      (error "Missing template: %S" whole))
+    (setq template (car parts))
+    (setq parts (cdr parts))
+    (when parts
+      (error "Extra terms after template: %S" whole))
+    `(nt (GUARD ,pattern
+                (lambda (env)
+                  (let ((pre (sexprw-template ',template env)))
+                    (list (cons (cons '$out pre) env)))))
+         ($out) nil)))
+
+(defun sexprw-read-tactic-from-minibuffer (&optional prompt history)
+  (intern
+   (completing-read (or prompt "Tactic: ")
+                    obarray
+                    'sexprw-tactic-symbolp
+                    t
+                    nil
+                    (or history 'sexprw-tactic-symbolp))))
 
 ;; ============================================================
 

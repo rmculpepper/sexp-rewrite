@@ -59,10 +59,9 @@
         in-list-vector->list))
 
 (define-sexprw-tactic if-to-cond
-  (sexprw-rewrite
-   '(if $test $then $else)
-   '(cond (!SQ $test $then) !NL
-          (!SQ else $else))))
+  (if $test $then $else)
+  (cond (!SQ $test $then) !NL
+        (!SQ else $else)))
 
 ' ; example for if-to-cond, cond-else-absorb-*
 (if (< x 10)
@@ -76,30 +75,27 @@
                  1)))))
 
 (define-sexprw-tactic cond-else-absorb-cond
-  (sexprw-rewrite
-   '(cond $clauses:rest1 (else (cond $more:rest)))
-   '(cond $clauses !NL $more)))
+  (cond $clauses:rest1 (else (cond $more:rest)))
+  (cond $clauses !NL $more))
 
 (define-sexprw-tactic cond-else-absorb-if
-  (sexprw-rewrite
-   '(cond $clauses:rest1 (else (if $test $then $else)))
-   '(cond $clauses !NL (!SQ $test !SL $then) !NL (!SQ else !SL $else))))
+  (cond $clauses:rest1 (else (if $test $then $else)))
+  (cond $clauses !NL (!SQ $test !SL $then) !NL (!SQ else !SL $else)))
 
 (define-sexprw-tactic let-if-to-cond
   ;; Unsafe if $name occurs free in $else
-  (sexprw-rewrite
-   '(let (($name:id $rhs))
-      (if $name:id $then $else))
-   '(cond (!SQ $rhs !SL => (lambda ($name) !SL $then)) !NL
-          (!SQ else !SL $else))))
+  (let (($name:id $rhs))
+    (if $name:id $then $else))
+  (cond (!SQ $rhs !SL => (lambda ($name) !SL $then)) !NL
+        (!SQ else !SL $else)))
 
 (define-sexprw-tactic cond-else-absorb-let-if
   ;; Unsafe if $name occurs free in %else
-  (sexprw-rewrite
-   '(cond $clauses:rest1 (else (let (($name:id $rhs)) (if $name:id $then $else))))
-   '(cond $clauses !NL
-          (!SQ $rhs !SL => (lambda ($name) !SL $then)) !NL
-          (!SQ else !SL $else))))
+  (cond $clauses:rest1
+        (else (let (($name:id $rhs)) (if $name:id $then $else))))
+  (cond $clauses !NL
+        (!SQ $rhs !SL => (lambda ($name) !SL $then)) !NL
+        (!SQ else !SL $else)))
 
 ' ; example for let-if-to-cond
 (let ([x (assq key alist)])
@@ -121,10 +117,9 @@
            :with $def (define $name !SL $rhs)))
 
 (define-sexprw-tactic letrec-to-definitions
-  (sexprw-rewrite
-   '(letrec ($c:let-clause ...) $body:rest)
-   '(let () !NL (!@ $c.$def !NL) ... $body)))
-  
+  (letrec ($c:let-clause ...) $body:rest)
+  (let () !NL (!@ $c.$def !NL) ... $body))
+
 ' ; example for letrec-to-definitions
 (letrec ([odd? (lambda (x) (not (even? x)))]
          [even? (lambda (x) (or (zero? x) (even? (sub1 x))))])
@@ -141,22 +136,20 @@
   ;; Unsafe if any %rhs has free occurrences of any $name, or if %%body
   ;; contains definitions of some $x where $x collides with some $name
   ;; or if $x occurs free in any %rhs.
-  (sexprw-rewrite
-   '(let ($c:let-clause ...) $body:rest)
-   '(let () !NL (!@ $c.$def !NL) ... $body)))
+  (let ($c:let-clause ...) $body:rest)
+  (let () !NL (!@ $c.$def !NL) ... $body))
 
 ' ; example for let-to-definitions
 (let ((x 1) (y 2)) (+ x y))
 
 (define-sexprw-tactic let-loop-to-definition
   ;; Unsafe if $name occurs free in %init
-  (sexprw-rewrite
-   '(let $loop:id (($arg:id $init) ...) $body:rest)
-   '(let () !NL
-      (define ($loop $arg ...) !SL
-        $body)
-      !NL
-      ($loop $init ...))))
+  (let $loop:id (($arg:id $init) ...) $body:rest)
+  (let () !NL
+    (define ($loop $arg ...) !SL
+      $body)
+    !NL
+    ($loop $init ...)))
 
 ;; Would be nice to recognize potential 'for' loops,
 ;; but needs a lot more information than we have here.
