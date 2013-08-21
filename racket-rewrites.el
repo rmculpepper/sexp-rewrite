@@ -265,8 +265,7 @@
          splice-empty-let
          define-case-lambda-sort-clauses
          define-case-lambda-to-optionals
-         define-rest-to-optional/same-name
-         define-rest-to-optional/different-name))
+         define-rest-to-optional))
 
 (define-sexprw-tactic define-absorb-lambda
   (define $name:id (lambda ($arg ...) $body:rest))
@@ -280,6 +279,10 @@
     (+ y 1)
     ;; trailing comment
     ))
+
+(define-sexprw-tactic define-absorb-lambda/curry
+  (define $header (lambda ($arg ...) $body:rest))
+  (define ($header $arg ...) !NL $body))
 
 (define-sexprw-tactic splice-begin
   (begin $body:rest)
