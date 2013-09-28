@@ -69,6 +69,7 @@ for more details.")
 (define-key sexprw-mode-keymap "x" 'sexprw-execute-tactic)
 (define-key sexprw-mode-keymap "s" 'sexprw-search-pattern)
 (define-key sexprw-mode-keymap "[" 'sexprw-squarify)
+(define-key sexprw-mode-keymap "(" 'sexprw-roundify)
 
 (define-key sexprw-mode-keymap "k" 'sexprw-kill-next-sexpragon-sexp)
 (define-key sexprw-mode-keymap "w" 'sexprw-kill-sexpragon-region)
@@ -1057,6 +1058,16 @@ guard body."
                      ((null times) nil))))
     (save-excursion
       (sexprw-rebracket-repeat times "(" "[" "]" "parenthesis"))
+    nil))
+
+(defun sexprw-roundify (&optional times)
+  "Turn square brackets into round parens."
+  (interactive "P")
+  (let ((times (cond ((numberp times) times)
+                     ((consp times) (car times))
+                     ((null times) nil))))
+    (save-excursion
+      (sexprw-rebracket-repeat times "[" "(" ")" "square bracket"))
     nil))
 
 (defconst sexprw-all-whitespace-re 
