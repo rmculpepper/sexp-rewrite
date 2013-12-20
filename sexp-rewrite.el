@@ -299,6 +299,7 @@ Customizable via the variable `sexprw-auto-definition-tactics'."
 ;;      | !NL            ~ (NL)
 ;;      | !SP            ~ (SP)
 ;;      | !SL            ~ (SL)
+;;      | !NOSP          ~ (NONE)
 ;;      | (!REP PT vars) ~ (tREP T vars)
 ;;      | PT ...         ~ (tREP T nil)        ; vars=nil means "auto"
 
@@ -355,6 +356,8 @@ Customizable via the variable `sexprw-auto-definition-tactics'."
            '(NL))
           ((and template (eq pretty '!SP))
            '(SP))
+          ((and template (eq pretty '!NOSP))
+           '(NONE))
           ((and template (eq pretty '!SL))
            '(SL))
           ((eq pretty '...)
@@ -906,7 +909,7 @@ guard body."
                    'SP))))
         ((eq (car template) 'SPLICE)
          (sexprw-template-list-contents (cdr template) env))
-        ((memq (car template) '(SP NL SL))
+        ((memq (car template) '(SP NL SL NONE))
          (car template))
         ((eq (car template) 'tREP)
          (sexprw-template-rep template env))))
