@@ -508,3 +508,5 @@
 ;; ' ; another example for eta-expand
 ;; (compose foo
 ;;          bar)
+
+(provide 'racket-rewrites)
