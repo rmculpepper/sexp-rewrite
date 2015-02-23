@@ -1460,14 +1460,14 @@ If COUNT is nil, moves all following sexps."
             (start-col (save-restriction
                          (widen)
                          (- (point) (line-beginning-position)))))
-        (cond (count (ignore-errors (dotimes count (forward-sexp))))
+        (cond (count (ignore-errors (dotimes (_i count) (forward-sexp))))
               (t (up-list)))
         (end-of-line) ;; get trailing close-parens too, if on same line
         (let* ((end (point))
                (text (filter-buffer-substring start end))
                (lines (sexprw-sexpragon text start-col)))
           (unless lines
-            "Non-sexpragonal region")
+            (error "Non-sexpragonal region"))
           (delete-region start end)
           (goto-char init-point) ;; FIXME: redundant?
           (sexprw-emit-sexpragon lines))))))
