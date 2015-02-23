@@ -71,9 +71,9 @@ for more details.")
 (define-key sexprw-mode-keymap "[" 'sexprw-squarify)
 (define-key sexprw-mode-keymap "(" 'sexprw-roundify)
 
-(define-key sexprw-mode-keymap "k" 'sexprw-kill-next-sexpragon-sexp)
-(define-key sexprw-mode-keymap "w" 'sexprw-kill-sexpragon-region)
-(define-key sexprw-mode-keymap "y" 'sexprw-yank-sexpragon)
+(define-key sexprw-mode-keymap "k" 'sexprw-kill-next-sexpagon-sexp)
+(define-key sexprw-mode-keymap "w" 'sexprw-kill-sexpagon-region)
+(define-key sexprw-mode-keymap "y" 'sexprw-yank-sexpagon)
 
 (define-key sexprw-mode-keymap (kbd "M-SPC") 'sexprw-collapse-space/move-sexps)
 
@@ -274,7 +274,7 @@ Customizable via the variable `sexprw-auto-definition-tactics'."
              (setq bs (cdr bs)))
            ok))
         ((and (eq (car a) 'block) (eq (car b) 'block))
-         ;; FIXME: could compare sexpragons (if exist), slightly more equalities
+         ;; FIXME: could compare sexpagons (if exist), slightly more equalities
          (equal (sexprw-block-text a)
                 (sexprw-block-text b)))
         (t nil)))
@@ -708,10 +708,10 @@ of matched term(s)."
            text)
           (t (substring text 0 impure-prefix)))))
 
-(defun sexprw-block-sexpragon (block)
+(defun sexprw-block-sexpagon (block)
   (let* ((text (sexprw-block-text block))
          (start-col (sexprw-block-start-column block)))
-    (sexprw-sexpragon text start-col)))
+    (sexprw-sexpagon text start-col)))
 
 (defun sexprw-grab-next-sexp (require-pure)
   "Grabs next sexp and returns Block or nil.
@@ -866,12 +866,12 @@ guard body."
 ;;   - 'NL
 ;;   - 'SL
 ;;   - 'NONE
-;;   - (cons 'SEXPRAGON listofstring)
+;;   - (cons 'SEXPAGON listofstring)
 ;;   - (cons 'SL=nil PreOutput)
 ;;   - (cons 'SL=NL PreOutput)
 ;; Interpret PreOutput left to right; *last* spacing symbol to occur wins.
 ;;
-;; Output = (listof (U string 'NL (cons 'SEXPRAGON listofstring)))
+;; Output = (listof (U string 'NL (cons 'SEXPAGON listofstring)))
 
 (defun sexprw-template (template env)
   "Produces (cons 'pre PreOutput) for given TEMPLATE and ENV."
@@ -970,7 +970,7 @@ guard body."
     (let ((value (cdr entry)))
       (cond ((and (consp value) (eq (car value) 'block))
              (let ((text (sexprw-block-text value))
-                   (lines (sexprw-block-sexpragon value))
+                   (lines (sexprw-block-sexpagon value))
                    (space (if (sexprw-block-onelinep value) 'SP 'NL)))
                (unless (sexprw-block-onelinep value)
                  (setq sexprw-template*-multiline t))
@@ -978,7 +978,7 @@ guard body."
                       ;; no space after empty block
                       null)
                      (lines
-                      (list (cons 'SEXPRAGON lines) space))
+                      (list (cons 'SEXPAGON lines) space))
                      (t
                       (list text space)))))
             ((and (consp value) (eq (car value) 'pre))
@@ -1007,7 +1007,7 @@ guard body."
 (defvar sexprw-output*-SL nil)
 
 (defun sexprw-output* (pre raccum latent)
-  (cond ((and (consp pre) (eq (car pre) 'SEXPRAGON))
+  (cond ((and (consp pre) (eq (car pre) 'SEXPAGON))
          (let* ((raccum (cons (sexprw-output*-spacing latent) raccum))
                 (raccum (cons pre raccum)))
            (cons raccum 'NONE)))
@@ -1046,8 +1046,8 @@ guard body."
              (newline-and-indent))
             ((stringp fragment)
              (insert fragment))
-            ((and (consp fragment) (eq (car fragment) 'SEXPRAGON))
-             (sexprw-emit-sexpragon (cdr fragment)))
+            ((and (consp fragment) (eq (car fragment) 'SEXPAGON))
+             (sexprw-emit-sexpagon (cdr fragment)))
             (t (error "Bad output: %S" (car output)))))))
 
 ;; ============================================================
@@ -1168,9 +1168,9 @@ of list."
            (progn (ignore-errors (down-list 1)) (> (point) init-point))))))
 
 ;; ============================================================
-;; Sexpragon functions
+;; Sexpagon functions
 
-;; A "sexpragon" is the shape of a well-formatted sexp:
+;; A "sexpagon" is the shape of a well-formatted sexp:
 
 ;;     (----------+
 ;;     |          |
@@ -1179,10 +1179,10 @@ of list."
 
 ;; There must be no non-whitespace characters to the left of the open
 ;; paren's column from the second line to the last. Well-formatted
-;; Lisp/Scheme/Racket code is nearly always sexpragonal, with the
+;; Lisp/Scheme/Racket code is nearly always sexpagonal, with the
 ;; occasional exception of multi-line string literals.
 
-(defun sexprw-sexpragon (string start-col)
+(defun sexprw-sexpagon (string start-col)
   (let* ((lines (split-string text "[\n]" nil))
          (ok t)
          (rtext nil))
@@ -1200,11 +1200,11 @@ of list."
       (setq lines (cdr lines)))
     (and ok (reverse rtext))))
 
-(defun sexprw-kill-next-sexpragon-sexp ()
+(defun sexprw-kill-next-sexpagon-sexp ()
   "Kills the sexp at point, preserving relative indentation.
-The sexp must be a sexpragon. Whitespace is removed from lines
+The sexp must be a sexpagon. Whitespace is removed from lines
 after the first so the sexp will be properly indented when
-`yank'ed at column 0 or yanked via `sexprw-yank-sexpragon'."
+`yank'ed at column 0 or yanked via `sexprw-yank-sexpagon'."
   (interactive)
   (let* ((init-point (point))
          (next (sexprw-grab-next-sexp-range)))
@@ -1212,18 +1212,18 @@ after the first so the sexp will be properly indented when
       (error "No sexp at point"))
     (let* ((start (nth 1 next))
            (end (nth 3 next))
-           (lines (sexprw-sexpragon (filter-buffer-substring start end))))
+           (lines (sexprw-sexpagon (filter-buffer-substring start end))))
       (unless lines
-        (error "Non-sexpragonal sexp at point"))
+        (error "Non-sexpagonal sexp at point"))
       (let ((text (mapconcat 'identity lines "\n")))
         (delete-and-extract-region init-point end)
         (kill-new text)))))
 
-(defun sexprw-kill-sexpragon-region (start end)
+(defun sexprw-kill-sexpagon-region (start end)
   "Kills from START to END, preserving relative indentation.
-The region must be a sexpragon. Whitespace is removed from lines
+The region must be a sexpagon. Whitespace is removed from lines
 after the first so the sexp will be properly indented when
-`yank'ed at column 0 or yanked via `sexprw-yank-sexpragon'."
+`yank'ed at column 0 or yanked via `sexprw-yank-sexpagon'."
   (interactive "r")
   (let ((text (filter-buffer-substring start end))
         (start-col (save-excursion
@@ -1231,14 +1231,14 @@ after the first so the sexp will be properly indented when
                        (widen)
                        (goto-char start)
                        (- start (line-beginning-position))))))
-    (let ((lines (sexprw-sexpragon text start-col)))
+    (let ((lines (sexprw-sexpagon text start-col)))
       (unless lines
-        (error "Non-sexpragonal region"))
+        (error "Non-sexpagonal region"))
       (let ((text (mapconcat 'identity lines "\n")))
         (delete-and-extract-region start end)
         (kill-new text)))))
 
-(defun sexprw-yank-sexpragon ()
+(defun sexprw-yank-sexpagon ()
   "Yanks text, preserving relative indentation of multi-line text.
 Whitespace is added to lines after the first so each line starts
 at the same column as the first line."
@@ -1247,9 +1247,9 @@ at the same column as the first line."
         (col (- (point) (line-beginning-position))))
     (unless text
       (error "No text in kill ring"))
-    (sexprw-emit-sexpragon (split-string text "[\n]" nil))))
+    (sexprw-emit-sexpagon (split-string text "[\n]" nil))))
 
-(defun sexprw-emit-sexpragon (lines)
+(defun sexprw-emit-sexpagon (lines)
   (let ((col (save-restriction
                (widen)
                (- (point) (line-beginning-position)))))
@@ -1465,12 +1465,12 @@ If COUNT is nil, moves all following sexps."
         (end-of-line) ;; get trailing close-parens too, if on same line
         (let* ((end (point))
                (text (filter-buffer-substring start end))
-               (lines (sexprw-sexpragon text start-col)))
+               (lines (sexprw-sexpagon text start-col)))
           (unless lines
-            (error "Non-sexpragonal region"))
+            (error "Non-sexpagonal region"))
           (delete-region start end)
           (goto-char init-point) ;; FIXME: redundant?
-          (sexprw-emit-sexpragon lines))))))
+          (sexprw-emit-sexpagon lines))))))
 
 ;; ============================================================
 
