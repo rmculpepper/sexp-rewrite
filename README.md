@@ -4,7 +4,7 @@ sexp-rewrite (sexprw for short) is an Emacs package for doing
 pattern-based rewriting of sexp-structured code---ie, code in Lisp,
 Scheme, and primarily Racket.
 
-Some examples of "pattern-based rewriting" are:
+Some examples of pattern-based rewriting are:
 
  - Turn a chain of `if` expressions into a `cond` expression.
 
@@ -13,8 +13,8 @@ Some examples of "pattern-based rewriting" are:
 
  - Turn a `letrec` into a sequence of internal definitions.
 
-The pattern language is simple enough that you can define your own ad
-hoc rewriting rules.
+The pattern language is simple enough that you can easily define your
+own rewriting rules.
 
 Transformations preserve comments and are halfway decent at preserving
 formatting, with the occasional help of appropriate spacing
@@ -25,14 +25,15 @@ annotations.
 Visit `sexp-rewrite.el` and evaluate the buffer (`M-x eval-buffer`).
 Then visit `racket-rewrites.el` and evaluate that buffer too.
 
-Most rewriting rules (called "tactics") have examples after them.
-Go to the example labeled "`example for if-to-cond...`" and place the
-cursor at the first left parenthesis---that is, at `(if (< x 10)...`.
+Most of the rewrite rules (or "tactics") in `racket-rewrites.el` have
+examples after them.  Go to the example labeled "`example for
+if-to-cond...`" and place the cursor at the first left
+parenthesis---that is, at `(if (< x 10)...`.
 
 Run the `if-to-cond` tactic by entering `M-x sexprw-execute-tactic`
 and then `if-to-cond`.
 The `if` expression gets rewritten to a `cond` expression---but only
-the first `if`; there are still `if`s left in the `else` branch.
+the first `if`; there are still `if` expressions left in the `else` branch.
 Now run the `cond-else-absorb-if` tactic. There's a keybinding for
 `sexprw-execute-tactic` that makes executing a specific tactic
 quicker: `C-c C-d x`. Then type `cond-else-absorb-if` at the prompt
@@ -65,20 +66,43 @@ false in the else, branch (unless it's mutated...) so there's no
 reason to refer to it. But it's always a good idea to keep an eye on
 the tactics applied to make sure they don't break your code.
 
-## How to define tactics
+## Keybindings
 
-To be continued.
+The prefix for all sexp-rewrite commands is `C-d C-d`.
 
-## Other features
+The following keybindings invoke sexp-rewrite tactics:
 
-Type `C-c C-d s` or `M-x sexprw-search-pattern` to search forward for
-sexps matching a given pattern.
+- `<prefix> x` : runs `sexprw-execute-tactic`, which applies the given tactic
 
-Type `C-c C-d [` or `M-x sexprw-squarify` to convert round parentheses
-into square brackets.
+- `<prefix> e` : runs `sexprw-auto-expression`
+- `<prefix> r e` : runs `sexprw-auto-expression` repeatedly until no tactic applies
+- `<prefix> d` : runs `sexprw-auto-definition`
+- `<prefix> r d` : runs `sexprw-auto-definition` repeatedly until no tactic applies
+
+The following keybindings manipulate sexpagons:
+
+- `<prefix> k` : runs `sexprw-kill-next-sexpagon-sexp`
+- `<prefix> w` : runs `sexprw-kill-sexpagon-region`
+- `<prefix> y` : runs `sexprw-yank-sexpagon`
+- `<prefix> M-SPC` : runs `sexprw-collapse-space/move-sexps`
+
+The following other keybindings are also provided:
+
+- `<prefix> s` : runs `sexprw-search-pattern`, which searches forward
+  for a term matching the given sexprw pattern
+
+- `<prefix> [` : runs `sexprw-squarify`, which converts parentheses to square brackets
+  for all following terms at the given level
+
+- `<prefix> (` : runs `sexprw-roundify`, which converts square brackets to parentheses
+  for all following terms at the given level
+
+## Defining Tactics
+
+See `REFERENCE.md` for a description of the tactic language.
 
 ## Known bugs and limitations
 
-This library has a very vague notion of sexp syntax. Notions like
+This library has a vague notion of sexp syntax. Notions like
 improper lists are not supported, and `.` is treated as an
 atom. Reader abbreviations like `'` for `quote` are not recognized.

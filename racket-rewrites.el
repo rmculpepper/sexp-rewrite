@@ -480,33 +480,33 @@
 ' ; example for eta-reduce
 (lambda (x y z) (f x y z))
 
-;; (define-sexprw-tactic eta-expand
-;;   $expr
-;;   :guard
-;;   (lambda (env)
-;;     (let ((argn (read-number "Number of arguments: " 1)))
-;;       (unless (and (integerp argn) (>= argn 0))
-;;         (error "Bad number of arguments: %S" argn))
-;;       (let ((args
-;;              (cond ((= argn 0)
-;;                     nil)
-;;                    ((= argn 1)
-;;                     (list (sexprw-template 'x nil)))
-;;                    (t
-;;                     (let ((rargs nil))
-;;                       (dotimes (i argn)
-;;                         (push (sexprw-template (intern (format "x%d" (1+ i))) nil)
-;;                               rargs))
-;;                       (reverse rargs))))))
-;;         (list (cons (cons '$arg (cons 'rep args)) env)))))
-;;   ;; template
-;;   (lambda ($arg ...) !SL $expr))
+(define-sexprw-tactic eta-expand
+  $expr
+  :guard
+  (lambda (env)
+    (let ((argn (read-number "Number of arguments: " 1)))
+      (unless (and (integerp argn) (>= argn 0))
+        (error "Bad number of arguments: %S" argn))
+      (let ((args
+             (cond ((= argn 0)
+                    nil)
+                   ((= argn 1)
+                    (list (sexprw-template 'x nil)))
+                   (t
+                    (let ((rargs nil))
+                      (dotimes (i argn)
+                        (push (sexprw-template (intern (format "x%d" (1+ i))) nil)
+                              rargs))
+                      (reverse rargs))))))
+        (list (cons (cons '$arg (cons 'rep args)) env)))))
+  ;; template
+  (lambda ($arg ...) !SL $expr))
 
-;; ' ; example for eta-expand
-;; add1
+' ; example for eta-expand
+add1
 
-;; ' ; another example for eta-expand
-;; (compose foo
-;;          bar)
+' ; another example for eta-expand
+(compose foo
+         bar)
 
 (provide 'racket-rewrites)

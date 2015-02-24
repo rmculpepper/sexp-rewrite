@@ -295,6 +295,7 @@ Customizable via the variable `sexprw-auto-definition-tactics'."
 ;;      | (!GUARD P expr)~ (GUARD P expr)
 
 ;; PT ::= like PP, with following additions and replacements:
+;;      | [ PT* ]        ~ (SQLIST T*)
 ;;      | (!SQ PT*)      ~ (SQLIST T*)
 ;;      | !NL            ~ (NL)
 ;;      | !SP            ~ (SP)
