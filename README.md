@@ -1,6 +1,6 @@
 # sexp-rewrite
 
-sexp-rewrite (sexprw for short) is an Emacs package for doing
+sexp-rewrite (abbreviated sexprw) is an Emacs package for doing
 pattern-based rewriting of sexp-structured code---ie, code in Lisp,
 Scheme, and primarily Racket.
 
@@ -68,7 +68,7 @@ the tactics applied to make sure they don't break your code.
 
 ## Keybindings
 
-The prefix for all sexp-rewrite commands is `C-d C-d`.
+The prefix for all sexp-rewrite commands is `C-c C-d`.
 
 The following keybindings invoke sexp-rewrite tactics:
 
