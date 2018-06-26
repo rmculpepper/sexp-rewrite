@@ -62,7 +62,7 @@ for more details.")
 ;; Keybindings
 
 (defvar sexprw-mode-keymap (make-sparse-keymap))
-(global-set-key (kbd "C-c C-d") sexprw-mode-keymap)
+(global-set-key (kbd "C-c C-s") sexprw-mode-keymap)
 
 (define-key sexprw-mode-keymap "e" 'sexprw-auto-expression)
 (define-key sexprw-mode-keymap "d" 'sexprw-auto-definition)
