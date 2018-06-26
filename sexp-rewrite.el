@@ -68,6 +68,7 @@ for more details.")
 (define-key sexprw-mode-keymap "d" 'sexprw-auto-definition)
 (define-key sexprw-mode-keymap "x" 'sexprw-execute-tactic)
 (define-key sexprw-mode-keymap "s" 'sexprw-search-pattern)
+(define-key sexprw-mode-keymap "i" 'sexprw-search-rewrite)
 (define-key sexprw-mode-keymap "[" 'sexprw-squarify)
 (define-key sexprw-mode-keymap "(" 'sexprw-roundify)
 
@@ -1116,27 +1117,29 @@ guard body."
                                'sexprw-pattern-history)))
   (let ((sexrpw-current-operation 'search)) ;; fluid-let
     (setq sexprw-failure-info nil)
-    (sexprw-search-pattern/ast (sexprw-desugar-pattern pattern nil))))
+    (let ((init-point (point))
+          (result (sexprw-search-pattern/ast (sexprw-desugar-pattern pattern nil))))
+      (cond (result
+             (push-mark init-point)
+             (message "Pattern found; mark saved where search started"))
+            (t
+             (goto-char init-point)
+             (message "Pattern not found"))))))
 
 (defun sexprw-search-pattern/ast (pattern)
+  ;; Note: moves point
   ;; (message "search pattern = %S" pattern)
-  (let ((init-point (point))
-        (success nil)
+  (let ((success nil)
         (continue t))
     (while continue
       (setq continue nil)
       (sexprw-skip-whitespace)
       (let ((result (save-excursion (sexprw-match pattern))))
         (cond (result
-               (setq success t))
+               (setq success result))
               (t
                (setq continue (sexprw-move-forward))))))
-    (cond (success
-           (push-mark init-point)
-           (message "Pattern found; mark saved where search started"))
-          (t
-           (goto-char init-point)
-           (message "Pattern not found")))))
+    success))
 
 (defun sexprw-move-forward ()
   "Moves point forward along sexp boundaries.
@@ -1169,6 +1172,28 @@ of list."
            (progn (ignore-errors (down-list 1)) (> (point) init-point))))))
 
 ;; ============================================================
+;; Search and Rewrite
+
+(defun sexprw-search-rewrite (pattern template)
+  "Search forward for sexp matching PATTERN."
+  (interactive
+   (list (read-from-minibuffer "Search pattern: " nil nil t
+                               'sexprw-pattern-history)
+         (read-from-minibuffer "Rewrite template: " nil nil t
+                               'sexprw-template-history)))
+  (let ((sexrpw-current-operation 'search)) ;; fluid-let
+    (setq sexprw-failure-info nil)
+    (let ((init-point (point))
+          (result (sexprw-search-pattern/ast (sexprw-desugar-pattern pattern nil))))
+      (cond (result
+             (push-mark init-point)
+             (message "Pattern found; mark saved where search started")
+             (sexprw-rewrite pattern template))
+            (t
+             (goto-char init-point)
+             (message "Pattern not found"))))))
+
+;; ============================================================
 ;; Sexpagon functions
 
 ;; A "sexpagon" is the shape of a well-formatted sexp:
@@ -1183,7 +1208,7 @@ of list."
 ;; Lisp/Scheme/Racket code is nearly always sexpagonal, with the
 ;; occasional exception of multi-line string literals.
 
-(defun sexprw-sexpagon (string start-col)
+(defun sexprw-sexpagon (text start-col)
   (let* ((lines (split-string text "[\n]" nil))
          (ok t)
          (rtext nil))
@@ -1212,8 +1237,13 @@ after the first so the sexp will be properly indented when
     (unless next
       (error "No sexp at point"))
     (let* ((start (nth 1 next))
+           (start-col (save-excursion
+                        (save-restriction
+                          (widen)
+                          (goto-char start)
+                          (- start (line-beginning-position)))))
            (end (nth 3 next))
-           (lines (sexprw-sexpagon (filter-buffer-substring start end))))
+           (lines (sexprw-sexpagon (filter-buffer-substring start end) start-col)))
       (unless lines
         (error "Non-sexpagonal sexp at point"))
       (let ((text (mapconcat 'identity lines "\n")))
