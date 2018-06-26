@@ -58,6 +58,9 @@
         build-list for/sum-from-map for/sum-from-for/list
         in-list-vector->list))
 
+;; --------------------
+;; If/Cond
+
 (define-sexprw-tactic if-to-cond
   (if $test $then $else)
   (cond [$test $then] !NL
@@ -109,6 +112,8 @@
       (cdr x)
       (error 'no-key)))
 
+;; --------------------
+
 (define-sexprw-nt let-clause
   :attributes ($def)
   (pattern [$name:id (lambda ($arg ...) $body:rest)]
@@ -133,9 +138,9 @@
   odd?)
 
 (define-sexprw-tactic let-to-definitions
-  ;; Unsafe if any %rhs has free occurrences of any $name, or if %%body
+  ;; Unsafe if any $rhs has free occurrences of any $name, or if $body
   ;; contains definitions of some $x where $x collides with some $name
-  ;; or if $x occurs free in any %rhs.
+  ;; or if $x occurs free in any $rhs.
   (let ($c:let-clause ...) $body:rest)
   (let () !NL (!@ $c.$def !NL) ... $body))
 
@@ -146,9 +151,7 @@
   ;; Unsafe if $name occurs free in %init
   (let $loop:id (($arg:id $init) ...) $body:rest)
   (let () !NL
-    (define ($loop $arg ...) !SL
-      $body)
-    !NL
+    (define ($loop $arg ...) !SL $body) !NL
     ($loop $init ...)))
 
 ;; Would be nice to recognize potential 'for' loops,
@@ -186,6 +189,15 @@
 
 ' ; example for begin-trivial
 (begin 5)
+
+(define-sexprw-tactic match1-to-definition
+  (match $expr ($pattern $body:rest))
+  (let () !NL (match-define $pattern !SL $expr) !NL $body))
+
+' ; example for match1-to-definition
+(match (thing-position (current-thing))
+  [(point x y _)
+   (and (< XMIN x XMAX) (< YMIN y YMAX))])
 
 ;; HO functions to for loops
 
@@ -265,7 +277,8 @@
          splice-empty-let
          define-case-lambda-sort-clauses
          define-case-lambda-to-optionals
-         define-rest-to-optional))
+         define-rest-to-optional
+         define-rest-to-optional2))
 
 (define-sexprw-tactic define-absorb-lambda
   (define $name:id (lambda ($arg ...) $body:rest))
@@ -422,10 +435,27 @@
       (list env)))
   (define ($name $arg ... [$optional-arg $default]) !NL $body))
 
+(define-sexprw-tactic define-rest-to-optional2
+  ;; Unsafe if $rest used elsewhere in $body
+  ;; Also, see guard
+  (define ($name:id $arg:id ... \. $rest:id)
+    (let (($optional-arg:id (if (pair? $rest:id) (car $rest:id) $default)))
+      $body:rest))
+  :guard
+  (lambda (env)
+    ;; If $default = $rest, rewrite to null
+    ;; Unsafe if $default *contains* $rest
+    (if (sexprw-entry-equal (sexprw-env-ref env '$default)
+                            (sexprw-env-ref env '$rest))
+        (list (cons (cons '$default (sexprw-template 'null env)) env))
+      (list env)))
+  (define ($name $arg ... [$optional-arg $default]) !NL $body))
+
 ' ; example for define-rest-to-optionals (from SXML)
 (define (ddo:ancestor test-pred? . num-ancestors)
   (let ((num-anc (if (null? num-ancestors) 0 (car num-ancestors))))
     (do-stuff-with test-pred? num-anc)))
+
 
 ;; ============================================================
 ;; Specialized rewritings
@@ -500,7 +530,7 @@
                       (reverse rargs))))))
         (list (cons (cons '$arg (cons 'rep args)) env)))))
   ;; template
-  (lambda ($arg ...) !SL $expr))
+  (lambda ($arg ...) !SL ($expr $arg ...)))
 
 ' ; example for eta-expand
 add1
@@ -508,5 +538,28 @@ add1
 ' ; another example for eta-expand
 (compose foo
          bar)
+
+(define-sexprw-tactic invmap
+  (for/list ([$x (in-list $xs)]) ($fn $x))
+  (map $fn:id $xs))
+
+' ; example for invmap
+(for/list ([x (in-list xs)]) (f x))
+
+(defun sexprw-block-from-text (text)
+  (list 'block text t 0 0 nil nil))
+
+(define-sexprw-tactic intro-function
+  $expr
+  :guard
+  (lambda (env)
+    (let ((header (read-string "Enter function header:")))
+      (list (cons (cons '$header (sexprw-block-from-text header)) env))))
+  (!SPLICE
+   (define $header !SL $expr) !NL
+   $header))
+
+' ; example for intro-function; type "(f x)"
+(+ x 1)
 
 (provide 'racket-rewrites)
