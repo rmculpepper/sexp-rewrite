@@ -562,4 +562,24 @@ add1
 ' ; example for intro-function; type "(f x)"
 (+ x 1)
 
+;; ============================================================
+
+(define-sexprw-nt error-call
+  (pattern (error $arg:rest)))
+
+(define-sexprw-tactic if-error-when
+  (if $c $e:error-call $body)
+  (!SPLICE (when $c !SL $e) !NL $body))
+
+(define-sexprw-tactic if-error-unless
+  (if $c $body $e:error-call)
+  (!SPLICE (unless $c !SL $e) !NL $body))
+
+
+';
+(let ()
+  (if (bad?)
+      (error 'who "it's bad")
+      (handle the thing)))
+
 (provide 'racket-rewrites)
