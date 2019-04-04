@@ -1,11 +1,13 @@
-;;; sexp-rewrite.el --- pattern-based rewriting of sexp-structured code
+;;; sexp-rewrite.el --- pattern-based rewriting of sexp-structured code  -*- lexical-binding:t -*-
 
-;;; Copyright 2013 Ryan Culpepper.
-;;; Released under the terms of the GPL version 3 or later;
-;;; see the text after `sexprw-legal-notice' for details.
+;; Copyright 2013 Ryan Culpepper.
+;; Released under the terms of the GPL version 3 or later;
+;; see the text after `sexprw-legal-notice' for details.
+
+;; Version: 0.03
 
 (defconst sexprw-copyright    "Copyright 2013 Ryan Culpepper")
-(defconst sexprw-version      "0.02")
+(defconst sexprw-version      "0.03")
 (defconst sexprw-author-name  "Ryan Culpepper")
 (defconst sexprw-author-email "ryanc@racket-lang.org")
 (defconst sexprw-web-page     "https://github.com/rmculpepper/sexp-rewrite")
@@ -21,6 +23,8 @@ but WITHOUT ANY WARRANTY; without even the implied warranty of
 MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
 General Public License at http://www.gnu.org/licenses/gpl-3.0.html
 for more details.")
+
+;;; Commentary:
 
 ;; ============================================================
 ;; TO DO
@@ -47,6 +51,8 @@ for more details.")
 ;; - build "tactic apropos"---search by literals in tactic pattern & template
 ;; - more interactive/flexible rewriting
 ;;   - eg, move let/let*/letrec bindings to <interactive point>
+;; - put rewrite rules in "bundles", and enable different "bundles" for
+;;   different major modes (scheme-mode, racket-mode, emacs-lisp-mode, ...)
 
 ;; long term
 ;; - port to DrRacket
@@ -61,27 +67,32 @@ for more details.")
 ;; ============================================================
 ;; Keybindings
 
-(defvar sexprw-mode-keymap (make-sparse-keymap))
-(global-set-key (kbd "C-c C-s") sexprw-mode-keymap)
+;;; Code:
 
-(define-key sexprw-mode-keymap "e" 'sexprw-auto-expression)
-(define-key sexprw-mode-keymap "d" 'sexprw-auto-definition)
-(define-key sexprw-mode-keymap "x" 'sexprw-execute-tactic)
-(define-key sexprw-mode-keymap "s" 'sexprw-search-pattern)
-(define-key sexprw-mode-keymap "i" 'sexprw-search-rewrite)
-(define-key sexprw-mode-keymap "[" 'sexprw-squarify)
-(define-key sexprw-mode-keymap "(" 'sexprw-roundify)
+(defvar sexprw-mode-map
+  (let ((mainmap (make-sparse-keymap))
+        (map (make-sparse-keymap)))
+    (define-key mainmap (kbd "C-c C-s") map)
 
-(define-key sexprw-mode-keymap "k" 'sexprw-kill-next-sexpagon-sexp)
-(define-key sexprw-mode-keymap "w" 'sexprw-kill-sexpagon-region)
-(define-key sexprw-mode-keymap "y" 'sexprw-yank-sexpagon)
+    (define-key map "e" 'sexprw-auto-expression)
+    (define-key map "d" 'sexprw-auto-definition)
+    (define-key map "x" 'sexprw-execute-tactic)
+    (define-key map "s" 'sexprw-search-pattern)
+    (define-key map "i" 'sexprw-search-rewrite)
+    (define-key map "[" 'sexprw-squarify)
+    (define-key map "(" 'sexprw-roundify)
 
-(define-key sexprw-mode-keymap (kbd "M-SPC") 'sexprw-collapse-space/move-sexps)
+    (define-key map "k" 'sexprw-kill-next-sexpagon-sexp)
+    (define-key map "w" 'sexprw-kill-sexpagon-region)
+    (define-key map "y" 'sexprw-yank-sexpagon)
 
-(define-key sexprw-mode-keymap (kbd "r e")
-  (lambda () (interactive) (sexprw-auto-expression 100)))
-(define-key sexprw-mode-keymap (kbd "r d")
-  (lambda () (interactive) (sexprw-auto-definition 100)))
+    (define-key map (kbd "M-SPC") 'sexprw-collapse-space/move-sexps)
+
+    (define-key map (kbd "r e")
+      (lambda () (interactive) (sexprw-auto-expression 100)))
+    (define-key map (kbd "r d")
+      (lambda () (interactive) (sexprw-auto-definition 100)))
+    mainmap))
 
 (defvar sexprw-auto-expression-tactics nil
   "List of tactics tried by `sexprw-auto-expression'.")
@@ -92,7 +103,7 @@ for more details.")
 (defvar sexprw-pattern-history nil)
 (defvar sexprw-template-history nil)
 
-(defgroup sexprw-group nil
+(defgroup sexprw nil
   "Customization options for sexp-rewrite."
   :group 'scheme)
 
@@ -100,8 +111,20 @@ for more details.")
   "Tactics that should not be run automatically.
 Affects only `sexprw-auto-expression' and `sexprw-auto-definition';
 disabled tactics can still be run via `sexprw-execute-tactic', etc."
-  :type '(repeat symbol)
-  :group 'sexprw-group)
+  :type '(repeat symbol))
+
+;;;###autoload
+(define-minor-mode sexprw-mode
+  "Minor mode for pattern-based rewrite of sexp-structured code."
+  ;; Implicitly activates sexprw-mode-map when enabled.
+  :init-value nil)
+
+;; FIXME: This should likely be in an emacs-lisp-rewrite.el with corresponding
+;; rewrite rules.
+;;;###autoload
+(add-hook 'emacs-lisp-mode #'sexprw-mode)
+;;;###autoload
+(add-hook 'scheme-mode #'sexprw-mode)
 
 (defun sexprw-disable-tactic (tactic-name)
   (interactive
@@ -187,12 +210,7 @@ Customizable via the variable `sexprw-auto-definition-tactics'."
   (interactive)
   (message "%S" sexprw-failure-info))
 
-(put 'sexprw-template-error
-     'error-conditions
-     '(error sexprw-template-error))
-(put 'sexprw-template-error
-     'error-message
-     "Error instantiating template")
+(define-error 'sexprw-template-error "Error instantiating template")
 
 ;; ============================================================
 ;; Rewriting
@@ -1300,6 +1318,8 @@ at the same column as the first line."
 ;; with value (list 'nt P attrs docstring), where attrs is list of symbol
 
 (defmacro define-sexprw-nt (name &rest clauses)
+  ;; FIXME: Don't make such definitions global since different languages will
+  ;; likely want different non-terminals.
   "Define NAME as a sexp-rewrite nonterminal specified by the CLAUSES."
   `(progn (put ',name 'sexprw-nt (sexprw-parse-nt-def 'name ',clauses)) ',name))
 
@@ -1379,6 +1399,8 @@ at the same column as the first line."
 ;; has the property 'sexprw-tactic.
 
 (defmacro define-sexprw-tactic (name &rest parts)
+  ;; FIXME: Don't make those rules global since different languages will
+  ;; want different rules.
   "Define NAME as a sexprw-rewrite tactic."
   (unless (and name (symbolp name))
     (error "define-sexprw-tactic: expected symbol for NAME, got: %S" name))
@@ -1506,3 +1528,4 @@ If COUNT is nil, moves all following sexps."
 ;; ============================================================
 
 (provide 'sexp-rewrite)
+;;; sexp-rewrite.el ends here.

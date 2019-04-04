@@ -1,0 +1,3 @@
+*.elc
+sexp-rewrite-pkg.el
+sexp-rewrite-autoloads.el

@@ -1,46 +1,52 @@
-;;; racket-rewrites.el --- part of sexp-rewrite package
+;;; racket-rewrites.el --- part of sexp-rewrite package  -*- lexical-binding:t -*-
 
-;;; Copyright 2013 Ryan Culpepper.
-;;; Released under the terms of the GPL version 3 or later.
-;;; See the top of the sexp-rewrite.el file for details.
+;; Copyright 2013 Ryan Culpepper.
+;; Released under the terms of the GPL version 3 or later.
+;; See the top of the sexp-rewrite.el file for details.
 
-;;; ============================================================
-;;; TO DO
+;;; Commentary:
 
-;;; short term
-;;; - build big library of Scheme/Racket tactics
-;;; - build automatic tactics
+;; ============================================================
+;; TO DO
+
+;; short term
+;; - build big library of Scheme/Racket tactics
+;; - build automatic tactics
 ;;;   - general purpose expressions
 ;;;   - coalescing conditionals
 ;;;   - working in definition contexts
 ;;;   - ...?
-;;; - find polite way to set Racket tactics vars only in "Racket mode"
+;; - find polite way to set Racket tactics vars only in "Racket mode"
 
-;;; long term
-;;; - port to DrRacket, etc (see sexp-rewrite todo)
+;; long term
+;; - port to DrRacket, etc (see sexp-rewrite todo)
 
-;;; ============================================================
-;;; On safety
+;; ============================================================
+;; On safety
 
-;;; Need to figure out how to compromise between safety and usability.
+;; Need to figure out how to compromise between safety and usability.
 
-;;; Every last one of these is unsafe if literals don't have their
-;;; standard bindings.
+;; Every last one of these is unsafe if literals don't have their
+;; standard bindings.
 ;;; 
-;;; Most of them are slightly unsafe.
+;; Most of them are slightly unsafe.
 
-;;; ============================================================
-;;; Using racket-rewrites
+;; ============================================================
+;; Using racket-rewrites
 
-;;; Most of the tactics below have strings following the definition
-;;; that let you see the effect of the tactic.
+;; Most of the tactics below have strings following the definition
+;; that let you see the effect of the tactic.
 
-;;; Once you've tried the tactic, press "C-/" to undo the change and
-;;; restore the example.
+;; Once you've tried the tactic, press "C-/" to undo the change and
+;; restore the example.
 
-;;; ============================================================
-;;; Expression rewrites
-;;; Could be triggered automatically via pattern search.
+; ============================================================
+;; Expression rewrites
+;; Could be triggered automatically via pattern search.
+
+;;; Code:
+
+(require 'sexp-rewrite)
 
 (setq sexprw-auto-expression-tactics
       '(if-to-cond
@@ -57,6 +63,10 @@
         map for-each ormap andmap foldl
         build-list for/sum-from-map for/sum-from-for/list
         in-list-vector->list))
+
+
+;;;###autoload
+(add-hook 'racket-mode #'sexprw-mode)
 
 ;; --------------------
 ;; If/Cond
@@ -585,3 +595,4 @@ add1
       (handle the thing)))
 
 (provide 'racket-rewrites)
+;;; racket-rewrites.el ends here.
