@@ -541,8 +541,8 @@ of matched term(s)."
                       (sexprw-fail `(match guard env= ,env)))))))
         (t (error "Bad pattern: %S" pattern))))
 
-;; TODO: check result is nil or (list extension-of-env)?
-(defun sexprw-check-guard-result (result env)
+(defun sexprw-check-guard-result (result _env)
+  ;; FIXME: check result is nil or (list extension-of-env)?
   result)
 
 (defun sexprw-match-var (pvar nt)
@@ -791,7 +791,7 @@ INIT-POINT is where point started. NONWS-POINT is the location of
 the first non-whitespace character. START-POINT is where the sexp
 starts.  END-POINT is where the sexp ends.  Does not change
 point."
-  (condition-case error-info
+  (condition-case _error-info
       (save-excursion
         (let ((init-point (point)))
           (sexprw-skip-whitespace)
@@ -1026,7 +1026,7 @@ guard body."
 (defun sexprw-output (pre)
   (let* ((result (sexprw-output* pre nil 'NONE))
          (raccum (car result))
-         (latent (cdr result)))
+         (_latent (cdr result)))
     (let ((sexprw-output*-SL nil)) ;; fluid-let
       (reverse raccum))))
 
@@ -1292,8 +1292,7 @@ after the first so the sexp will be properly indented when
 Whitespace is added to lines after the first so each line starts
 at the same column as the first line."
   (interactive)
-  (let ((text (current-kill 0))
-        (col (- (point) (line-beginning-position))))
+  (let ((text (current-kill 0)))
     (unless text
       (error "No text in kill ring"))
     (sexprw-emit-sexpagon (split-string text "[\n]" nil))))
@@ -1321,9 +1320,9 @@ at the same column as the first line."
   ;; FIXME: Don't make such definitions global since different languages will
   ;; likely want different non-terminals.
   "Define NAME as a sexp-rewrite nonterminal specified by the CLAUSES."
-  `(progn (put ',name 'sexprw-nt (sexprw-parse-nt-def 'name ',clauses)) ',name))
+  `(progn (put ',name 'sexprw-nt (sexprw-parse-nt-def ',clauses)) ',name))
 
-(defun sexprw-parse-nt-def (name clauses)
+(defun sexprw-parse-nt-def (clauses)
   (let ((docstring nil)
         (attrs nil))
     (when (and (consp clauses)
