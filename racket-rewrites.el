@@ -63,8 +63,8 @@
 
 (define-sexprw-tactic if-to-cond
   (if $test $then $else)
-  (cond [$test $then] !NL
-        [else $else]))
+  (cond [$test !SL $then] !NL
+        [else !SL $else]))
 
 ' ; example for if-to-cond, cond-else-absorb-*
 (if (< x 10)
@@ -207,6 +207,8 @@
            :with $for-rhs (in-vector $e))
   (pattern (string->list $e)
            :with $for-rhs (in-string $e))
+  (pattern (range $n)
+           :with $for-rhs (in-range $n))
   (pattern $e
            :with $for-rhs (in-list $e)))
 
