@@ -1429,14 +1429,14 @@ at the same column as the first line."
                     (list (cons (cons '$out pre) env)))))
          ($out) nil)))
 
-(defun sexprw-read-tactic-from-minibuffer (&optional prompt history)
+(defun sexprw-read-tactic-from-minibuffer ()
   (intern
-   (completing-read (or prompt "Tactic: ")
+   (completing-read "Tactic: "
                     obarray
                     'sexprw-tactic-symbolp
                     t
                     nil
-                    (or history 'sexprw-tactic-symbolp))))
+                    'sexprw-tactic-history)))
 
 ;; ============================================================
 
