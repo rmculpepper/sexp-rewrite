@@ -4,10 +4,10 @@
 ;; Released under the terms of the GPL version 3 or later;
 ;; see the text after `sexprw-legal-notice' for details.
 
-;; Version: 0.03
+;; Version: 0.04
 
-(defconst sexprw-copyright    "Copyright 2013 Ryan Culpepper")
-(defconst sexprw-version      "0.03")
+(defconst sexprw-copyright    "Copyright 2013-2019 Ryan Culpepper")
+(defconst sexprw-version      "0.04")
 (defconst sexprw-author-name  "Ryan Culpepper")
 (defconst sexprw-author-email "ryanc@racket-lang.org")
 (defconst sexprw-web-page     "https://github.com/rmculpepper/sexp-rewrite")
@@ -87,6 +87,7 @@ for more details.")
     (define-key map "y" 'sexprw-yank-sexpagon)
 
     (define-key map (kbd "M-SPC") 'sexprw-collapse-space/move-sexps)
+    (define-key map [tab] 'sexprw-indent-rigidly)
 
     (define-key map (kbd "r e")
       (lambda () (interactive) (sexprw-auto-expression 100)))
@@ -1523,6 +1524,183 @@ If COUNT is nil, moves all following sexps."
           (delete-region start end)
           (goto-char init-point) ;; FIXME: redundant?
           (sexprw-emit-sexpagon lines))))))
+
+;; ============================================================
+
+(defun sexprw-indent-rigidly (count)
+  "Set the active region and call `sexprw-indent-region-rigidly'.
+The region is set according to the following rules:
+
+- If a region is already active, that region is used.
+- If the prefix argument is a positive integer COUNT, then the
+  region consists of the next COUNT S-expressions.
+- Otherwise, the region extends to the end of the enclosing
+  S-expression (if there is one) or to the end of the buffer."
+  (interactive "P")
+  (when (consp count) (setq count (car count)))
+  (unless (integerp count) (setq count nil))
+  (cond ((region-active-p)
+         (sexprw-indent-region-rigidly))
+        ((and (integerp count) (> count 0))
+         (sexprw-skip-whitespace)
+         (let ((end (save-excursion
+                      (ignore-errors (dotimes (_i count) (forward-sexp)))
+                      (point))))
+           (push-mark end t t)
+           (sexprw-indent-region-rigidly)))
+        (t
+         (sexprw-skip-whitespace)
+         (let ((end (save-excursion
+                      (or (ignore-errors (up-list) (point))
+                          (point-max)))))
+           (push-mark end t t)
+           (sexprw-indent-region-rigidly)))))
+
+(defvar sexprw-indent-rigidly-map
+  (let ((map (make-sparse-keymap)))
+    (define-key map [left]   'sexprw-indent-rigidly-left)
+    (define-key map [right]  'sexprw-indent-rigidly-right)
+    (define-key map [up]     'sexprw-indent-rigidly-up)
+    (define-key map [down]   'sexprw-indent-rigidly-down)
+    (define-key map [return] 'sexprw-indent-rigidly-newline)
+    (define-key map [tab]    'sexprw-indent-rigidly-indent)
+    map)
+  "Transient keymap for adjusting indentation interactively.
+It is activated by calling `sexprw-indent-region-rigidly' interactively.")
+
+(defun sexprw-indent-region-rigidly ()
+  "Like `indent-rigidly' but also moves the selected segment of
+the first line and can move the region vertically as well as
+horizontally."
+  (interactive)
+  (message
+   (substitute-command-keys
+    "Move region with \\<sexprw-indent-rigidly-map>\\[sexprw-indent-rigidly-left], \\[sexprw-indent-rigidly-right], \\[sexprw-indent-rigidly-up], \\[sexprw-indent-rigidly-down], \\[sexprw-indent-rigidly-newline], or \\[sexprw-indent-rigidly-indent]."))
+  ;; FIXME: `undo' gives "undo in region" warning, bad behavior! I tried passing
+  ;; `deactivate-mark' as the on-exit callback, but it didn't seem to help.
+  (set-transient-map sexprw-indent-rigidly-map t))
+
+(defun sexprw-indent-rigidly--pop-undo ()
+  (and (memq last-command '(sexprw-indent-rigidly-left
+                            sexprw-indent-rigidly-right
+                            sexprw-indent-rigidly-up
+                            sexprw-indent-rigidly-down
+                            sexprw-indent-rigidly-newline
+                            sexprw-indent-rigidly-indent))
+       (consp buffer-undo-list)
+       (eq (car buffer-undo-list) nil)
+       (pop buffer-undo-list)))
+
+(defun sexprw--region-excursion (proc)
+  "Like save-excursion, but keeps the region over the same bits
+of text. IIUC, save-excursion uses markers with the wrong
+insertion mode, so inserted whitespace would become part of the
+region. That can be fixed with insert-before-markers, but that
+won't work for newline-and-indent, etc.  Also does additional
+transient mode stuff (undos, keep mark active)."
+  (when (region-active-p)
+    (sexprw-indent-rigidly--pop-undo)
+    (let ((am (copy-marker (region-beginning) t))
+          (bm (copy-marker (region-end))))
+      (save-excursion
+        (goto-char am)
+        (funcall proc am bm))
+      (goto-char am)
+      (set-mark bm)
+      (move-marker am nil)
+      (move-marker bm nil)))
+  ;; Keep the active region in transient mode.
+  (when (eq (cadr overriding-terminal-local-map) sexprw-indent-rigidly-map)
+    (setq deactivate-mark nil)))
+
+(defun sexprw-indent-rigidly-right ()
+  "Move the active region right by one space."
+  (interactive)
+  (sexprw--region-excursion
+   (lambda (beg end)
+     (insert " ")
+     (forward-line 1)
+     (when (< (point) end)
+       (indent-rigidly (point) end 1)))))
+
+(defun sexprw-indent-rigidly-left ()
+  "Move the active region left by one space. If there is no
+horizontal whitespace immediately before the region, there is no
+effect."
+  ;; FIXME: preserve indentation
+  ;; FIXME: use current-column, indent-to to preserve tabs?
+  (interactive)
+  (sexprw--region-excursion
+   (lambda (beg end)
+     (when (looking-back " " (1- beg))
+       (delete-region (1- beg) beg)
+       (goto-char beg)
+       (forward-line 1)
+       (when (< (point) end)
+         (indent-rigidly (point) end -1))))))
+
+(defun sexprw-indent-rigidly-down ()
+  "Move the active region down by one line on the same column."
+  (interactive)
+  (sexprw--region-excursion
+   (lambda (beg end)
+     (let ((col (current-column)))
+       (delete-horizontal-space t)
+       (newline)
+       (indent-to col)))))
+
+(defun sexprw-indent-rigidly-up ()
+  "Move the active region up by one line. If there are
+non-whitespace characters on the line where the region starts,
+this command has no effect. Otherwise, the region is moved up on
+the same column or on the first column after all non-whitespace
+characters."
+  (interactive)
+  (sexprw--region-excursion
+   (lambda (beg end)
+     (let* ((col (current-column))
+            (up (save-excursion
+                  (forward-line -1)
+                  (move-to-column col t)
+                  (point)))
+            (line-start (line-beginning-position)))
+       (skip-chars-backward "[:space:]\n" up)
+       (let ((pos (point))
+             (col2 (current-column)))
+         (when (< pos line-start)
+           (delete-region pos beg)
+           (forward-line 1)
+           (when (< (point) end)
+             (indent-rigidly (point) end (- col2 col)))))))))
+
+(defun sexprw-indent-rigidly-indent ()
+  "Move the active region by indenting (using
+`indent-according-to-mode'), and preserve the relative
+indentation of the subsequent lines."
+  (interactive)
+  (sexprw--region-excursion
+   (lambda (beg end)
+     (let ((col (current-column)))
+       (when (looking-back "^[\t ]*")
+         (indent-according-to-mode)
+         (let ((col2 (current-column)))
+           (forward-line 1)
+           (when (< (point) end)
+             (indent-rigidly (point) end (- col2 col)))))))))
+
+(defun sexprw-indent-rigidly-newline ()
+  "Move the active region down one line and indent the first
+line (using `newline-and-indent'), and preserve the relative
+indentation of the subsequent lines."
+  (interactive)
+  (sexprw--region-excursion
+   (lambda (beg end)
+     (let ((col1 (current-column)))
+       (newline-and-indent)
+       (let ((col2 (current-column)))
+         (forward-line 1)
+         (when (< (point) end)
+           (indent-rigidly (point) end (- col2 col1))))))))
 
 ;; ============================================================
 
