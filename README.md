@@ -36,7 +36,7 @@ The `if` expression gets rewritten to a `cond` expression---but only
 the first `if`; there are still `if` expressions left in the `else` branch.
 Now run the `cond-else-absorb-if` tactic. There's a keybinding for
 `sexprw-execute-tactic` that makes executing a specific tactic
-quicker: `C-c C-d x`. Then type `cond-else-absorb-if` at the prompt
+quicker: `C-c C-s x`. Then type `cond-else-absorb-if` at the prompt
 (you can use tab completion to save typing).
 The `if` expression gets "absorbed" into the `cond`. There's just one
 `if` left, but it's inside a `let`, so let's leave it alone for now.
@@ -46,13 +46,13 @@ there's an even quicker way.
 
 Undo twice (`C-/ C-/`) to reset the example to the original form,
 and make sure the cursor is back at the beginning of the example.
-Now enter `C-c C-d e` (which runs the `sexprw-auto-expression`
+Now enter `C-c C-s e` (which runs the `sexprw-auto-expression`
 command). The command automatically tries a bunch of tactics until one
 works, and it reports the name of the tactic in the minibuffer.
 
 Faster?
 
-Undo once (`C-/`) to reset the example again.  Now type `C-c C-d r e`,
+Undo once (`C-/`) to reset the example again.  Now type `C-c C-s r e`,
 which repeatedly tries tactics (up to about a hundred times) until
 they stop working. This time we get the first two `if` expressions in
 one shot, as well as the `if` under the `let`, which can be converted
@@ -68,7 +68,7 @@ the tactics applied to make sure they don't break your code.
 
 ## Keybindings
 
-The prefix for all sexp-rewrite commands is `C-c C-d`.
+The prefix for all sexp-rewrite commands is `C-c C-s`.
 
 The following keybindings invoke sexp-rewrite tactics:
 
