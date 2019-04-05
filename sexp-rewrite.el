@@ -137,6 +137,28 @@ disabled tactics can still be run via `sexprw-execute-tactic', etc."
   (setq sexprw-disabled-auto-tactics
         (delete tactic-name sexprw-disabled-auto-tactics)))
 
+;; ============================================================
+;; Debugging and diagnostics
+
+(defvar sexprw-current-operation nil
+  "Name of currently executing operation.")
+
+(defvar sexprw-failure-info nil
+  "Information about last sexp-rewrite failure(s).")
+
+(defun sexprw-fail (info)
+  (push (cons sexprw-current-operation (cons (point) info)) sexprw-failure-info)
+  nil)
+
+(defun sexprw-show-failure-info ()
+  (interactive)
+  (message "%S" sexprw-failure-info))
+
+(define-error 'sexprw-template-error "Error instantiating template")
+
+;; ============================================================
+;; Running tactics
+
 (defun sexprw-auto-expression (&optional times)
   "Run the default sexp-rewrite tactics for expressions.
 Customizable via the variable `sexprw-auto-expression-tactics'."
@@ -192,25 +214,6 @@ Customizable via the variable `sexprw-auto-definition-tactics'."
               (setq rused (cons tactic rused))))))
       (unless success (setq times 0)))
     rused))
-
-;; ============================================================
-;; Debugging and diagnostics
-
-(defvar sexprw-current-operation nil
-  "Name of currently executing operation.")
-
-(defvar sexprw-failure-info nil
-  "Information about last sexp-rewrite failure(s).")
-
-(defun sexprw-fail (info)
-  (push (cons sexprw-current-operation (cons (point) info)) sexprw-failure-info)
-  nil)
-
-(defun sexprw-show-failure-info ()
-  (interactive)
-  (message "%S" sexprw-failure-info))
-
-(define-error 'sexprw-template-error "Error instantiating template")
 
 ;; ============================================================
 ;; Rewriting
@@ -451,6 +454,8 @@ Customizable via the variable `sexprw-auto-definition-tactics'."
 
 ;; TODO: support IMPURITY as kind, matches non-whitespace stuff
 ;; between (point) and next sexp.
+
+(defconst sexprw-all-whitespace-re "[[:space:]\n]*")
 
 (defconst sexprw-pure-atom-re
   ;; Note: vague approximation, doesn't distinguish numbers from symbols,
@@ -897,9 +902,8 @@ guard body."
   "Produces (cons 'pre PreOutput) for given TEMPLATE and ENV."
   (cons 'pre (sexprw-template* (sexprw-desugar-pattern template t) env)))
 
-;; sexprw-template*-multiline : boolean, fluid
-;; Set when (hard) NL or multi-line block occurs in current LIST/SQLIST.
-(defvar sexprw-template*-multiline nil) ;; fluid
+(defvar sexprw-template*-multiline nil ;; boolean
+  "True when (hard) NL or multi-line block occurs in current LIST/SQLIST.")
 
 (defun sexprw-template* (template env)
   "Interprets core TEMPLATE using the pattern variables of ENV."
@@ -996,7 +1000,7 @@ guard body."
                  (setq sexprw-template*-multiline t))
                (cond ((zerop (length text))
                       ;; no space after empty block
-                      null)
+                      nil)
                      (lines
                       (list (cons 'SEXPAGON lines) space))
                      (t
@@ -1016,15 +1020,15 @@ guard body."
       (setq accum (cons accum (sexprw-template* inner env))))
     accum))
 
+;; sexprw-output*-SL : (U nil 'NL), fluid
+(defvar sexprw-output*-SL nil)
+
 (defun sexprw-output (pre)
   (let* ((result (sexprw-output* pre nil 'NONE))
          (raccum (car result))
          (latent (cdr result)))
     (let ((sexprw-output*-SL nil)) ;; fluid-let
       (reverse raccum))))
-
-;; sexprw-output*-SL : (U nil 'NL), fluid
-(defvar sexprw-output*-SL nil)
 
 (defun sexprw-output* (pre raccum latent)
   (cond ((and (consp pre) (eq (car pre) 'SEXPAGON))
@@ -1093,10 +1097,6 @@ guard body."
       (sexprw-rebracket-repeat times "[" "(" ")" "square bracket"))
     nil))
 
-(defconst sexprw-all-whitespace-re 
-  ;; "\\(\\s-\\|[\n]\\)*"  ; ??? matches close parens too?
-  "[[:space:]\n]*")
-
 (defun sexprw-open-bracket-re (from)
   ;; (concat "[[:space:]]*" (regexp-quote from))
   ;; (concat "\\s-*" (regexp-quote from))  ; doesn't get newlines
@@ -1133,7 +1133,7 @@ guard body."
   (interactive
    (list (read-from-minibuffer "Search pattern: " nil nil t
                                'sexprw-pattern-history)))
-  (let ((sexrpw-current-operation 'search)) ;; fluid-let
+  (let ((sexprw-current-operation 'search)) ;; fluid-let
     (setq sexprw-failure-info nil)
     (let ((init-point (point))
           (result (sexprw-search-pattern/ast (sexprw-desugar-pattern pattern nil))))
@@ -1199,7 +1199,7 @@ of list."
                                'sexprw-pattern-history)
          (read-from-minibuffer "Rewrite template: " nil nil t
                                'sexprw-template-history)))
-  (let ((sexrpw-current-operation 'search)) ;; fluid-let
+  (let ((sexprw-current-operation 'search)) ;; fluid-let
     (setq sexprw-failure-info nil)
     (let ((init-point (point))
           (result (sexprw-search-pattern/ast (sexprw-desugar-pattern pattern nil))))
