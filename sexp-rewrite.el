@@ -1,6 +1,6 @@
 ;;; sexp-rewrite.el --- pattern-based rewriting of sexp-structured code  -*- lexical-binding:t -*-
 
-;; Copyright 2013 Ryan Culpepper.
+;; Copyright 2013-2019 Ryan Culpepper.
 ;; Released under the terms of the GPL version 3 or later;
 ;; see the text after `sexprw-legal-notice' for details.
 

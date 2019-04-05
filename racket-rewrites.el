@@ -1,6 +1,6 @@
 ;;; racket-rewrites.el --- part of sexp-rewrite package  -*- lexical-binding:t -*-
 
-;; Copyright 2013 Ryan Culpepper.
+;; Copyright 2013-2019 Ryan Culpepper.
 ;; Released under the terms of the GPL version 3 or later.
 ;; See the top of the sexp-rewrite.el file for details.
 
