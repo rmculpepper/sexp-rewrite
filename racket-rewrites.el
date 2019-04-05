@@ -66,7 +66,7 @@
 
 
 ;;;###autoload
-(add-hook 'racket-mode #'sexprw-mode)
+(add-hook 'racket-mode-hook #'sexprw-mode)
 
 ;; --------------------
 ;; If/Cond
