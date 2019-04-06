@@ -122,9 +122,9 @@ disabled tactics can still be run via `sexprw-execute-tactic', etc."
 ;; FIXME: This should likely be in an emacs-lisp-rewrite.el with corresponding
 ;; rewrite rules.
 ;;;###autoload
-(add-hook 'emacs-lisp-mode #'sexprw-mode)
+(add-hook 'emacs-lisp-mode-hook #'sexprw-mode)
 ;;;###autoload
-(add-hook 'scheme-mode #'sexprw-mode)
+(add-hook 'scheme-mode-hook #'sexprw-mode)
 
 (defun sexprw-disable-tactic (tactic-name)
   (interactive
