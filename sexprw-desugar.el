@@ -45,10 +45,11 @@
         ((eq (car pretty) '!SQ)
          (if template
              (cons 'SQLIST (sexprw-desugar-pattern-list (cdr pretty) template))
-             (error "Bad pattern (!SQ not allowed): %S" pretty)))
+           (error "Bad pattern (!SQ not allowed): %S" pretty)))
         ((eq (car pretty) '!REP)
          (if template
-             (list 'tREP (sexprw-desugar-pattern (nth 1 pretty)) (nth 2 pretty))
+             (list 'tREP (sexprw-desugar-pattern (nth 1 pretty) template)
+                   (sexprw-desugar-pattern (nth 2 pretty) template))
            (error "Bad pattern (!REP not allowed): %S" pretty)))
         ((eq (car pretty) '!OR)
          (if template
