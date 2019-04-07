@@ -22,7 +22,7 @@ annotations.
 
 ## Try it out
 
-Visit `sexp-rewrite.el` and evaluate the buffer (`M-x eval-buffer`).
+Visit `sexprw.el` and evaluate the buffer (`M-x eval-buffer`).
 Then visit `racket-rewrites.el` and evaluate that buffer too.
 
 Most of the rewrite rules (or "tactics") in `racket-rewrites.el` have

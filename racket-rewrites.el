@@ -2,7 +2,7 @@
 
 ;; Copyright 2013-2019 Ryan Culpepper.
 ;; Released under the terms of the GPL version 3 or later.
-;; See the top of the sexp-rewrite.el file for details.
+;; See the top of the sexprw.el file for details.
 
 ;;; Commentary:
 
@@ -19,7 +19,7 @@
 ;; - find polite way to set Racket tactics vars only in "Racket mode"
 
 ;; long term
-;; - port to DrRacket, etc (see sexp-rewrite todo)
+;; - port to DrRacket, etc (see sexprw.el todo)
 
 ;; ============================================================
 ;; On safety
@@ -46,7 +46,7 @@
 
 ;;; Code:
 
-(require 'sexp-rewrite)
+(require 'sexprw)
 
 (setq sexprw-auto-expression-tactics
       '(if-to-cond
