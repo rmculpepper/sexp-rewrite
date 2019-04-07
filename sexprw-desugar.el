@@ -7,29 +7,38 @@
 ;; ============================================================
 ;; Pretty patterns and templates
 
-;; PP ::= symbol         ~ (quote symbol)
-;;      | $name:nt       ~ (VAR $name nt)      ; sigil is part of pvar name
-;;      | $name          ~ (VAR $name sexp)
-;;      | (PP*)          ~ (LIST P*)
-;;      | (!@ PP*)       ~ (SPLICE P*)
-;;      | (!SPLICE PP*)  ~ (SPLICE P*)
-;;      | PP ...         ~ (pREP P <Pk>)       ; <Pk> is patterns that follow,
-;;                                             ; grouped as splice
-;;      | (!OR PP*)      ~ (OR P*)
-;;      | (!AND PP*)     ~ (AND P*)
-;;      | (!GUARD P expr)~ (GUARD P expr)
-
-;; PT ::= like PP, with following additions and replacements:
-;;      | [ PT* ]        ~ (SQLIST T*)
-;;      | (!SQ PT*)      ~ (SQLIST T*)
-;;      | !NL            ~ (NL)
-;;      | !SP            ~ (SP)
-;;      | !SL            ~ (SL)
-;;      | !NOSP          ~ (NONE)
-;;      | (!REP PT vars) ~ (tREP T vars)
-;;      | PT ...         ~ (tREP T nil)        ; vars=nil means "auto"
-
 (defun sexprw-desugar-pattern (pretty template)
+  "Desugar the surface pattern PRETTY into a core pattern.
+
+If TEMPLATE is true, then PRETTY is treated as a template (that
+is, an output pattern); otherwise, PRETTY is treated as an (input) 
+pattern.
+
+The following grammar describes patterns and their desugaring rules:
+
+  PP ::= symbol         ~ (quote symbol)
+       | $name:nt       ~ (VAR $name nt)      ; sigil is part of pvar name
+       | $name          ~ (VAR $name sexp)
+       | (PP*)          ~ (LIST P*)
+       | (!@ PP*)       ~ (SPLICE P*)
+       | (!SPLICE PP*)  ~ (SPLICE P*)
+       | PP ...         ~ (pREP P <Pk>)       ; <Pk> is patterns that follow,
+                                              ; grouped as splice
+       | (!OR PP*)      ~ (OR P*)
+       | (!AND PP*)     ~ (AND P*)
+       | (!GUARD P expr)~ (GUARD P expr)
+
+The following grammar describes templates and their desugaring rules:
+
+  PT ::= like PP, with following additions and replacements:
+       | [ PT* ]        ~ (SQLIST T*)
+       | (!SQ PT*)      ~ (SQLIST T*)
+       | !NL            ~ (NL)
+       | !SP            ~ (SP)
+       | !SL            ~ (SL)
+       | !NOSP          ~ (NONE)
+       | (!REP PT vars) ~ (tREP T vars)
+       | PT ...         ~ (tREP T nil)        ; vars=nil means auto"
   (cond ((null pretty)
          '(LIST))
         ((symbolp pretty)

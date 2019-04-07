@@ -24,7 +24,6 @@
    (list 
     (read-from-minibuffer "Pattern: " nil nil t 'sexprw-pattern-history)
     (read-from-minibuffer "Template: " nil nil t 'sexprw-template-history)))
-  ;; (message "parsed pattern = %S" (sexprw-desugar-pattern pattern nil))
   (sexprw-rewrite/ast (sexprw-desugar-pattern pattern nil)
                       (sexprw-desugar-pattern template t)
                       guard))
@@ -42,15 +41,10 @@
              t)))))
 
 (defun sexprw-compute-rewrite/ast (pattern template &optional guard)
-  ;; (message "pattern = %S" pattern)
-  ;; (message "template = %S" template)
   (let ((env (sexprw-match pattern)))
-    ;; (message "point = %S" (point))
-    ;; (message "env = %S" env)
     (and env
          (sexprw-check-nonlinear-patterns (car env))
          (let ((env* (if guard (funcall guard (car env)) env)))
-           ;; (message "guarded env = %S" env*)
            (and (or env*
                     (sexprw-fail `(guard env= ,env)))
                 (let ((preoutput
@@ -59,14 +53,12 @@
                          (sexprw-template-error 
                           (sexprw-fail `(template ,error-info guard-env=
                                                   ,(car env*)))))))
-                  ;; (message "preoutput = %S" preoutput)
                   (and preoutput
                        (let ((output
                               (condition-case error-info
                                   (sexprw-output preoutput)
                                 (sexprw-template-error
                                  (sexprw-fail `(output ,error-info))))))
-                         ;; (message "output = %S" output)
                          output))))))))
 
 ;; ============================================================

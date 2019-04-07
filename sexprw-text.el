@@ -7,7 +7,7 @@
 ;; ============================================================
 ;; Blocks
 
-;; A Block is (list 'block TEXT ONELINEP STARTCOL IMPUREPREFIX START END).
+;; Block = (list 'block TEXT ONELINEP STARTCOL IMPUREPREFIX START END)
 
 (defun sexprw-block-text (block)
   (nth 1 block))
@@ -47,22 +47,13 @@
     (sexprw-sexpagon text start-col)))
 
 (defun sexprw-grab-next-sexp (require-pure)
-  "Grabs next sexp and returns Block or nil.
-
-A Block is (list 'block TEXT ONELINEP STARTCOL IMPUREPREFIX START END).
-TEXT is a string containing the contents of the block. ONELINEP
-indicates if the block consists of a single line.
-
-If IMPUREPREFIX is an integer, the block represents a single sexp
-preceeded by comments, and IMPUREPREFIX is the number of
-characters before the start of the sexp. If IMPUREPREFIX is nil,
-then TEXT may represent multiple sexps or something else
-entirely.
+  "Return a Block describing the next sexp, or nil on failure.
+On success, advance point to the end of the sexp.
 
 If REQUIRE-PURE is non-nil, then there must be no non-whitespace
 characters before the start of the sexp, or else nil is returned.
 
-On success, advances point to end of sexp."
+See `sexprw-range-to-block' for the definition of Block."
   (let ((result (sexprw-grab-next-sexp-range)))
     (and result
          (let ((nonws-point (nth 1 result))
@@ -77,6 +68,22 @@ On success, advances point to end of sexp."
                                          end-point)))))))
 
 (defun sexprw-range-to-block (start pure-start end)
+  "Returns a Block from the region START to END.
+
+If PURE-START is an integer, it must satisfy START <= PURE-START < END,
+and the Block represents a single sexp with a (possibly empty) \"impure
+prefix\". The impure prefix consists of comments and possibly prefixed
+reader abbreviations for quote, etc. Specifically, PURE-START is the
+result of `backward-sexp' starting at END. If PURE-START is nil, then 
+the region may represent multiple sexps or something else entirely.
+
+  Block = (list 'block TEXT ONELINEP STARTCOL IMPUREPREFIX START END)
+
+TEXT is a string containing the contents of the block. ONELINEP
+is true if the block consists of a single line. STARTCOL is the
+column where the first line of TEXT started. IMPUREPREFIX is the
+length of the \"impure prefix\" if PURE-START is an integer, or
+nil if PURE-START is nil."
   (list 'block
         (filter-buffer-substring start end)
         (= (line-number-at-pos start)
@@ -123,20 +130,20 @@ point."
 ;; ============================================================
 ;; Sexpagons
 
-;; A "sexpagon" is the shape of a well-formatted sexp:
-
-;;     (----------+
-;;     |          |
-;;     |      +---+
-;;     +------)
-
-;; There must be no non-whitespace characters to the left of the open
-;; paren's column from the second line to the last. Well-formatted
-;; Lisp/Scheme/Racket code is nearly always sexpagonal, with the
-;; occasional exception of multi-line string literals.
-
 (defun sexprw-sexpagon (text start-col)
   "If TEXT is a sexpagon, remove its indentation; else return nil.
+
+A sexpagon is the shape of a well-formatted sexp:
+
+    (----------+
+    |          |
+    |      +---+
+    +------)
+
+There must be no non-whitespace characters to the left of the open
+paren's column from the second line to the last. Well-formatted
+Lisp/Scheme/Racket code is nearly always sexpagonal, with the
+occasional exception of multi-line string literals.
 
 Given TEXT, a string whose first line originally started at
 column START-COL, return the (non-empty) list of strings
@@ -181,9 +188,18 @@ returns nil."
 ;; ============================================================
 ;; Emit Output
 
-;; Output = (listof (U string 'NL (cons 'SEXPAGON listofstring)))
-
 (defun sexprw-emit (output)
+  "Write OUTPUT at point.
+
+The following grammar describes Output:
+
+  Output = (listof OutputPart)
+  OutputPart ::= string
+               | NL
+               | (SEXPAGON . ListOfString)
+
+A NL part means `newline-and-indent'; a SEXPAGON part means
+`sexprw-emit-sexpagon'."
   (while output
     (let ((fragment (car output)))
       (setq output (cdr output))

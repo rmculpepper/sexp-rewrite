@@ -37,24 +37,6 @@
 ;; ============================================================
 ;; Core patterns
 
-;; P ::= (LIST P*)
-;;     | (SPLICE P*)
-;;     | (quote symbol)
-;;     | (VAR symbol nt)
-;;     | (pREP P Pk)
-;;     | (AND P*)
-;;     | (OR P*)
-;;     | (GUARD P expr)
-;;
-;; Matching builds an alist mapping pvar symbols to EnvValue
-;; EnvValue ::= Block                         ; see sexprw-text.el
-;;            | (cons 'rep EnvValue)          ; representing depth>0 list
-;;            | (cons 'pre PreOutput)         ; representing computed output
-;;
-;; (pREP P Pk) means "P ... Pk": match as many P as possible s.t. still
-;; possible to match Pk afterwards (then commit). Handling together
-;; avoids (non-local) backtracking while supporting non-trivial Pks.
-
 ;; FIXME (or not): doesn't handle dotted-pair notation
 
 ;; TODO: support IMPURITY as kind, matches non-whitespace stuff
@@ -69,11 +51,32 @@
   "^[-~!@$^&*_+=:./<>?a-zA-Z#0-9]+$")
 
 (defun sexprw-match (pattern)
-  "Matches the sexp starting at point against core PATTERN,
+  "Match the sexp starting at point against core PATTERN,
 returning an \(list ENV) mapping the pattern variables of
 PATTERN to fragments, or nil on failure.  Advances point to end
-of matched term(s)."
-  ;; (message "matching (%S): %S" (point) pattern)
+of matched term(s).
+
+The following grammar describes core patterns:
+
+  P ::= (LIST P*)
+      | (SPLICE P*)
+      | (quote symbol)
+      | (VAR symbol nt)
+      | (pREP P Pk)
+      | (AND P*)
+      | (OR P*)
+      | (GUARD P expr)
+
+Matching builds an Env: an alist mapping pvar symbols to EnvValue.
+
+  EnvValue ::= Block                    ; see `sexprw-range-to-block'
+             | (cons 'rep EnvValue)     ; representing depth>0 list
+             | (cons 'pre PreOutput)    ; representing computed output
+
+The (pREP P Pk) pattern represents (P ... Pk): match as many P as
+possible such that it is still possible to match Pk afterwards (then
+commit). Handling together avoids (non-local) backtracking while 
+supporting non-trivial Pks."
   (cond ((not (consp pattern))
          (error "Bad pattern: %s" pattern))
         ((eq (car pattern) 'quote)
@@ -400,36 +403,40 @@ guard body."
 ;; ============================================================
 ;; Templates
 
-;; T ::= string          ; literal text, eg "\n" inserts non-latent newline
-;;     | (quote symbol)  ; literal symbol
-;;     | (VAR symbol)    ; pattern variable
-;;     | (LIST T*)       ; parenthesized list
-;;     | (SQLIST T*)     ; bracketed list
-;;     | (SPLICE T*)     ; spliced list contents
-;;     | (SP)            ; latent space (ie, change latent newline to latent space)
-;;     | (SL)            ; latent "soft" newline: if surrounding list has any 
-;;                       ; NLs or multi-line blocks, NL, else ignore
-;;     | (NL)            ; latent newline
-;;     | (tREP T vars)   ; repetition
-;;
-;; PreOutput = (treeof PreOutputPart)
-;; PreOutputPart =
-;;   - string
-;;   - 'SP
-;;   - 'NL
-;;   - 'SL
-;;   - 'NONE
-;;   - (cons 'SEXPAGON ListOfString)
-;;   - (cons 'SL=nil PreOutput)
-;;   - (cons 'SL=NL PreOutput)
-;; Interpret PreOutput left to right; *last* spacing symbol to occur wins.
-
 (defvar sexprw-template*-multiline nil ;; boolean
   "True when (hard) NL or multi-line block occurs in current LIST/SQLIST.")
 
 (defun sexprw-template* (template env) ;; PreOutput
-  "Interprets core TEMPLATE using the pattern variables of ENV."
-  ;; (message "** template = %S" template)
+  "Interpret core TEMPLATE using the pattern variables of ENV
+to produce a PreOutput.
+
+The following grammar describes core templates:
+
+  T ::= string          ; literal text, eg \n inserts non-latent newline
+      | (quote symbol)  ; literal symbol
+      | (VAR symbol)    ; pattern variable
+      | (LIST T*)       ; parenthesized list
+      | (SQLIST T*)     ; bracketed list
+      | (SPLICE T*)     ; spliced list contents
+      | (SP)            ; latent space (ie, change latent newline to latent space)
+      | (SL)            ; latent soft newline: if surrounding list has any 
+                        ; NLs or multi-line blocks, NL, else ignore
+      | (NL)            ; latent newline
+      | (tREP T vars)   ; repetition
+
+The result is PreOutput:
+
+  PreOutput = (treeof PreOutputPart)
+  PreOutputPart ::= string
+                  | SP
+                  | NL
+                  | SL
+                  | NONE
+                  | (SEXPAGON . ListOfString)
+                  | (SL=nil . PreOutput)
+                  | (SL=NL . PreOutput)
+
+PreOutput is interpreted left to right: the *last* spacing symbol to occur wins."
   (cond ((stringp template)
          template)
         ((not (consp template))
@@ -461,7 +468,6 @@ guard body."
          (sexprw-template-rep template env))))
 
 (defun sexprw-template-rep (template env)
-  ;; (message "env for rep = %S" env)
   (let* ((inner (nth 1 template))
          (vars (or (nth 2 template)
                    ;; Take *all* depth>0 pvars in env that occur in template
@@ -546,6 +552,9 @@ guard body."
 (defvar sexprw-output*-SL nil)
 
 (defun sexprw-output (pre)
+  "Process the PreOutput PRE into Output.
+
+See `sexprw-template*' for PreOutput; see `sexprw-emit' for Output."
   (let* ((result (sexprw-output* pre nil 'NONE))
          (raccum (car result))
          (_latent (cdr result)))

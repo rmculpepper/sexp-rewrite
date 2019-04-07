@@ -13,7 +13,8 @@
 ;; Search with patterns
 
 (defun sexprw-search-pattern (pattern)
-  "Search forward for sexp matching PATTERN."
+  "Search forward for sexp matching PATTERN.
+On success, moves point and saves old point to mark."
   (interactive
    (list (read-from-minibuffer "Search pattern: " nil nil t
                                'sexprw-pattern-history)))
@@ -29,8 +30,8 @@
              (message "Pattern not found"))))))
 
 (defun sexprw-search-pattern/ast (pattern)
-  ;; Note: moves point
-  ;; (message "search pattern = %S" pattern)
+  "Search forward for match to given core PATTERN.
+Moves point regardless of success or failure."
   (let ((success nil)
         (continue t))
     (while continue
@@ -77,7 +78,7 @@ of list."
 ;; Search and Rewrite
 
 (defun sexprw-search-rewrite (pattern template)
-  "Search forward for sexp matching PATTERN."
+  "Search forward for PATTERN; if found, rewrite to TEMPLATE."
   (interactive
    (list (read-from-minibuffer "Search pattern: " nil nil t
                                'sexprw-pattern-history)
