@@ -9,7 +9,7 @@
 
 ;; ============================================================
 
-(defun sexprw-template (template env)
+(defun sexprw-template (template &optional env)
   "Produces (cons 'pre PreOutput) for given TEMPLATE and ENV."
   (cons 'pre (sexprw-template* (sexprw-desugar-pattern template t) env)))
 
@@ -43,7 +43,7 @@
 (defun sexprw-compute-rewrite/ast (pattern template &optional guard)
   (let ((env (sexprw-match pattern)))
     (and env
-         (sexprw-check-nonlinear-patterns (car env))
+         (sexprw--check-nonlinear-patterns (car env))
          (let ((env* (if guard (funcall guard (car env)) env)))
            (and (or env*
                     (sexprw-fail `(guard env= ,env)))
@@ -166,7 +166,7 @@
                            (pure-text (sexprw-block-pure-text x)))
                       ;; (message "x = %S" x)
                       ;; (message "pure-text = %S" pure-text)
-                      (and (or (string-match sexprw-pure-atom-re pure-text)
+                      (and (or (string-match sexprw--pure-atom-re pure-text)
                                (sexprw-fail `(match var sym atom)))
                            (list (list (cons '$ x))))))))
 
@@ -198,7 +198,7 @@
 ;; A Tactic is an nt that that defines $out and also has the property
 ;; 'sexprw-tactic (with value t).
 
-(defun sexprw-tactic-symbolp (sym)
+(defun sexprw-tactic-symbol-p (sym)
   (and (get sym 'sexprw-tactic) t))
 
 (defmacro define-sexprw-tactic (name &rest parts)
@@ -235,7 +235,7 @@
   (intern
    (completing-read "Tactic: "
                     obarray
-                    #'sexprw-tactic-symbolp
+                    #'sexprw-tactic-symbol-p
                     t
                     nil
                     'sexprw-tactic-history)))

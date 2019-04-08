@@ -12,7 +12,7 @@
 ;; Nonterminal (nt) names have property 'sexprw-nt with value
 ;; (list 'nt P attrs docstring), where attrs is list of symbol.
 
-(defun sexprw-nt-symbolp (sym)
+(defun sexprw-nt-symbol-p (sym)
   (and (get sym 'sexprw-nt) t))
 
 (defun sexprw-nt-value (sym)
@@ -42,7 +42,7 @@
 ;; TODO: support IMPURITY as kind, matches non-whitespace stuff
 ;; between (point) and next sexp.
 
-(defconst sexprw-pure-atom-re
+(defconst sexprw--pure-atom-re
   ;; Note: vague approximation, doesn't distinguish numbers from symbols,
   ;; doesn't support \ and | escapes, etc, doesn't support Unicode chars.
   ;; FIXME: use [:alpha:] to capture more chars (Unicode) ???
@@ -86,7 +86,7 @@ supporting non-trivial Pks."
            (and (or next
                     (sexprw-fail `(match quote pure-sexp)))
                 (let ((pure-text (sexprw-block-pure-text next)))
-                  (and (or (string-match sexprw-pure-atom-re pure-text)
+                  (and (or (string-match sexprw--pure-atom-re pure-text)
                            (sexprw-fail `(match quote is-symbol)))
                        (or (equal pure-text (symbol-name (cadr pattern)))
                            (sexprw-fail
@@ -94,13 +94,13 @@ supporting non-trivial Pks."
                                     ,(symbol-name (cadr pattern)))))
                        (list nil))))))
         ((eq (car pattern) 'VAR)
-         (sexprw-match-var (nth 1 pattern) (nth 2 pattern)))
+         (sexprw--match-var (nth 1 pattern) (nth 2 pattern)))
         ((eq (car pattern) 'LIST)
-         (sexprw-match-list (cdr pattern)))
+         (sexprw--match-list (cdr pattern)))
         ((eq (car pattern) 'SPLICE)
-         (sexprw-match-patterns (cdr pattern)))
+         (sexprw--match-patterns (cdr pattern)))
         ((eq (car pattern) 'pREP)
-         (sexprw-match-rep (nth 1 pattern) (nth 2 pattern)))
+         (sexprw--match-rep (nth 1 pattern) (nth 2 pattern)))
         ((eq (car pattern) 'OR)
          (let ((init-point (point))
                (result nil)
@@ -151,16 +151,16 @@ supporting non-trivial Pks."
                (guard (nth 2 pattern)))
            (and result
                 (let ((env (car result)))
-                  (or (sexprw-check-guard-result (funcall guard env) env)
+                  (or (sexprw--check-guard-result (funcall guard env) env)
                       (sexprw-fail `(match guard env= ,env)))))))
         (t (error "Bad pattern: %S" pattern))))
 
-(defun sexprw-check-guard-result (result _env)
+(defun sexprw--check-guard-result (result _env)
   ;; FIXME: check result is nil or (list extension-of-env)?
   result)
 
-(defun sexprw-match-var (pvar nt)
-  (unless (sexprw-nt-symbolp nt)
+(defun sexprw--match-var (pvar nt)
+  (unless (sexprw-nt-symbol-p nt)
     (error "Not defined as sexp-rewrite nt: %S" nt))
   (sexprw-skip-whitespace)
   (let* ((init-point (point))
@@ -169,8 +169,8 @@ supporting non-trivial Pks."
          (nt-attrs (nth 2 nt-val)))
     (let ((result (sexprw-match nt-pattern)))
       (and result
-           (sexprw-check-nonlinear-patterns (car result))
-           (let ((env (sexprw-adj-env (car result) nt nt-attrs pvar)))
+           (sexprw--check-nonlinear-patterns (car result))
+           (let ((env (sexprw--adj-env (car result) nt nt-attrs pvar)))
              (unless (assq pvar env)
                (let ((b (sexprw-range-to-block init-point nil (point))))
                  (push (cons pvar b) env)))
@@ -178,7 +178,7 @@ supporting non-trivial Pks."
                  (list nil)
                (list env)))))))
 
-(defun sexprw-adj-env (env nt attrs prefix)
+(defun sexprw--adj-env (env nt attrs prefix)
   "Checks, restricts, and prefixes ENV."
   (let ((new-env nil))
     (dolist (attr attrs)
@@ -192,22 +192,7 @@ supporting non-trivial Pks."
           (push (cons prefixed-attr (cdr entry)) new-env))))
     (reverse new-env)))
 
-;; returns t on success, nil if fewer than n sexps before end
-(defun sexprw-skip-forward-to-n-sexps-before-end (n)
-  (cond ((zerop n)
-         (goto-char (point-max)))
-        (t (let ((fast (point))
-                 (slow (point)))
-             (setq fast (ignore-errors (scan-sexps fast n)))
-             (and fast
-                  (progn
-                    (while fast
-                      (setq fast (ignore-errors (scan-sexps fast 1)))
-                      (when fast (setq slow (scan-sexps slow 1))))
-                    (goto-char slow)
-                    t))))))
-
-(defun sexprw-match-list (inners)
+(defun sexprw--match-list (inners)
   (let ((next (sexprw-grab-next-sexp t)))
     (and (or next
              (sexprw-fail `(match-list grab)))
@@ -220,7 +205,7 @@ supporting non-trivial Pks."
                           (end (sexprw-block-end-position next)))
                       (goto-char (1+ start))
                       (narrow-to-region (1+ start) (1- end))
-                      (let ((result (sexprw-match-patterns inners)))
+                      (let ((result (sexprw--match-patterns inners)))
                         (and result
                              (or (sexprw-looking-at-whitespace-to-eof)
                                  (sexprw-fail `(match-list end check-whitespace)))
@@ -228,7 +213,7 @@ supporting non-trivial Pks."
            ;; save-excursion resets point to end of list
            result))))
 
-(defun sexprw-match-patterns (inners)
+(defun sexprw--match-patterns (inners)
   (let ((accum (list '()))) ; nil or (list alist)
     (dolist (inner inners)
       (when accum
@@ -237,7 +222,7 @@ supporting non-trivial Pks."
                            (list (append (car inner-result) (car accum))))))))
     accum))
 
-(defun sexprw-match-rep (inner after)
+(defun sexprw--match-rep (inner after)
   ;; FIXME: add failure info
   (let ((matches nil))
     ;; matches : (listof (list match-count reversed-env-list point))
@@ -267,15 +252,18 @@ supporting non-trivial Pks."
           (goto-char match-point)
           (let ((next-result (sexprw-match after)))
             (when next-result
-              (let* ((env (sexprw-reverse-merge-alists inner match-renvs))
+              (let* ((env (sexprw--reverse-merge-alists inner match-renvs))
                      (env (append (car next-result) env)))
                 (setq answer (list env)))))))
       answer)))
 
 ;; FIXME: quadratic
-(defun sexprw-reverse-merge-alists (inner alists)
+(defun sexprw--reverse-merge-alists (inner alists)
+  "Merge ALISTS (a list of match environments) into a single
+match environment by accumulating the values into a reversed 'rep
+entry."
   ;; Not every key might appear in every alist, due to OR patterns.
-  (let ((keys (delete-dups (sexprw-pattern-variables inner nil)))
+  (let ((keys (delete-dups (sexprw--pattern-variables inner nil)))
         (accum nil))
     (dolist (key keys)
       (let ((values nil))
@@ -286,7 +274,7 @@ supporting non-trivial Pks."
         (push (cons key (cons 'rep values)) accum)))
     accum))
 
-(defun sexprw-pattern-variables (pattern onto)
+(defun sexprw--pattern-variables (pattern onto)
   ;; Accept templates too
   (cond ((eq (car pattern) 'VAR)
          (when (> (length pattern) 2)
@@ -300,16 +288,34 @@ supporting non-trivial Pks."
          (cons (nth 1 pattern) onto))
         ((memq (car pattern) '(LIST SPLICE SQLIST OR))
          (dolist (inner (cdr pattern))
-           (setq onto (sexprw-pattern-variables inner onto)))
+           (setq onto (sexprw--pattern-variables inner onto)))
          onto)
         ((eq (car pattern) 'pREP)
-         (sexprw-pattern-variables (nth 1 pattern) 
-                                   (sexprw-pattern-variables (nth 2 pattern) onto)))
+         (sexprw--pattern-variables (nth 1 pattern) 
+           (sexprw--pattern-variables (nth 2 pattern) onto)))
         ((eq (car pattern) 'tREP)
-         (sexprw-pattern-variables (nth 1 pattern) onto))
+         (sexprw--pattern-variables (nth 1 pattern) onto))
         ((memq (car pattern) '(quote SP NL SL))
          onto)
         (t (error "Bad pattern: %S" pattern))))
+
+(defun sexprw-skip-forward-to-n-sexps-before-end (n)
+  "Move point forward such that the end of the (restricted)
+buffer is N sexps away, and return t. On failure (for example, if
+there are fewer than N sexps before the end), return nil (and
+point is meaningless)."
+  (cond ((zerop n)
+         (goto-char (point-max)))
+        (t (let ((fast (point))
+                 (slow (point)))
+             (setq fast (ignore-errors (scan-sexps fast n)))
+             (and fast (sexprw-looking-at-whitespace-to-eof)
+                  (progn
+                    (while fast
+                      (setq fast (ignore-errors (scan-sexps fast 1)))
+                      (when fast (setq slow (scan-sexps slow 1))))
+                    (goto-char slow)
+                    t))))))
 
 (defun sexprw-looking-at-whitespace-to-eof ()
   "Return t if the rest of the (restricted) buffer contains only whitespace."
@@ -324,8 +330,11 @@ supporting non-trivial Pks."
   (let ((result (assq key env)))
     (and result (cdr result))))
 
-;; FIXME: here's another quadratic function...
-(defun sexprw-check-nonlinear-patterns (env0)
+(defun sexprw--check-nonlinear-patterns (env0)
+  "Return t ENV0 has the property that if any pattern variable
+occurs multiple times (that is, it is used \"nonlinearly\"),
+all of its entries are equivalent according to `sexprw-entry-equal'."
+  ;; FIXME: quadratic
   (let ((ok t)
         (env env0))
     (while (and env ok)
@@ -341,6 +350,7 @@ supporting non-trivial Pks."
     ok))
 
 (defun sexprw-entry-equal (a b)
+  "Return t if the EnvEntries A and B are equivalent."
   (cond ((and (eq (car a) 'rep) (eq (car b) 'rep)
               (= (length a) (length b)))
          (let ((as (cdr a)) 
@@ -351,6 +361,8 @@ supporting non-trivial Pks."
              (setq as (cdr as))
              (setq bs (cdr bs)))
            ok))
+        ((or (eq (car a) 'rep) (eq (car b) 'rep))
+         nil)
         ((and (eq (car a) 'block) (eq (car b) 'block))
          ;; FIXME: could compare sexpagons (if exist), slightly more equalities
          (equal (sexprw-block-text a)
@@ -421,7 +433,7 @@ guard body."
 ;; ============================================================
 ;; Templates
 
-(defvar sexprw-template*-multiline nil ;; boolean
+(defvar sexprw--template*-multiline nil ;; boolean
   "True when (hard) NL or multi-line block occurs in current LIST/SQLIST.")
 
 (defun sexprw-template* (template env) ;; PreOutput
@@ -469,10 +481,10 @@ PreOutput is interpreted left to right: the *last* spacing symbol to occur wins.
                (close (if (eq (car template) 'LIST) ")" "]"))
                (multiline nil))
            (let ((contents
-                  (let ((sexprw-template*-multiline nil)) ;; fluid-let
+                  (let ((sexprw--template*-multiline nil)) ;; fluid-let
                     (prog1 (sexprw-template-list-contents (cdr template) env)
-                      (setq multiline sexprw-template*-multiline)))))
-             (when multiline (setq sexprw-template*-multiline t))
+                      (setq multiline sexprw--template*-multiline)))))
+             (when multiline (setq sexprw--template*-multiline t))
              (list open
                    (cons (if multiline 'SL=NL 'SL=nil) contents)
                    'NONE
@@ -490,7 +502,7 @@ PreOutput is interpreted left to right: the *last* spacing symbol to occur wins.
          (vars (or (nth 2 template)
                    ;; Take *all* depth>0 pvars in env that occur in template
                    ;; (beware duplicate keys in alist)
-                   (let* ((env-keys (sexprw-pattern-variables template '()))
+                   (let* ((env-keys (sexprw--pattern-variables template '()))
                           ;; FIXME: Ack! quadratic, mutates, etc
                           (env-keys (delete-dups env-keys))
                           (raccum '()))
@@ -543,7 +555,7 @@ PreOutput is interpreted left to right: the *last* spacing symbol to occur wins.
                    (lines (sexprw-block-sexpagon value))
                    (space (if (sexprw-block-onelinep value) 'SP 'NL)))
                (unless (sexprw-block-onelinep value)
-                 (setq sexprw-template*-multiline t))
+                 (setq sexprw--template*-multiline t))
                (cond ((zerop (length text))
                       ;; no space after empty block
                       nil)
@@ -566,46 +578,47 @@ PreOutput is interpreted left to right: the *last* spacing symbol to occur wins.
       (setq accum (cons accum (sexprw-template* inner env))))
     accum))
 
-;; sexprw-output*-SL : (U nil 'NL), fluid -- FIXME: remove?
-(defvar sexprw-output*-SL nil)
+;; sexprw--output*-SL : (U nil 'NL), fluid -- FIXME: remove?
+(defvar sexprw--output*-SL nil)
 
 (defun sexprw-output (pre)
   "Process the PreOutput PRE into Output.
 
 See `sexprw-template*' for PreOutput; see `sexprw-emit' for Output."
-  (let* ((result (sexprw-output* pre nil 'NONE))
-         (raccum (car result))
-         (_latent (cdr result)))
-    (let ((sexprw-output*-SL nil)) ;; fluid-let
-      (reverse raccum))))
+  (let ((result  ;; (cons rev-output latent-space)
+         (let ((sexprw--output*-SL nil)) ;; fluid-let
+           (sexprw--output* pre nil 'NONE))))
+    (reverse (car result))))
 
-(defun sexprw-output* (pre raccum latent)
+(defun sexprw--output* (pre raccum latent)
+  "Process the PreOutput PRE with reversed Output RACCUM and
+latent Spacing LATENT into a (cons ReversedOutput Spacing)."
   (cond ((and (consp pre) (eq (car pre) 'SEXPAGON))
-         (let* ((raccum (cons (sexprw-output*-spacing latent) raccum))
+         (let* ((raccum (cons (sexprw--output*-spacing latent) raccum))
                 (raccum (cons pre raccum)))
            (cons raccum 'NONE)))
         ((and (consp pre) (eq (car pre) 'SL=nil))
-         (let ((sexprw-output*-SL nil)) ;; fluid-let
-           (sexprw-output* (cdr pre) raccum latent)))
+         (let ((sexprw--output*-SL nil)) ;; fluid-let
+           (sexprw--output* (cdr pre) raccum latent)))
         ((and (consp pre) (eq (car pre) 'SL=NL))
-         (let ((sexprw-output*-SL 'NL)) ;; fluid-let
-           (sexprw-output* (cdr pre) raccum latent)))
+         (let ((sexprw--output*-SL 'NL)) ;; fluid-let
+           (sexprw--output* (cdr pre) raccum latent)))
         ((consp pre)
-         (let ((result (sexprw-output* (car pre) raccum latent)))
-           (sexprw-output* (cdr pre) (car result) (cdr result))))
+         (let ((result (sexprw--output* (car pre) raccum latent)))
+           (sexprw--output* (cdr pre) (car result) (cdr result))))
         ((stringp pre)
-         (let* ((raccum (cons (sexprw-output*-spacing latent) raccum))
+         (let* ((raccum (cons (sexprw--output*-spacing latent) raccum))
                 (raccum (cons pre raccum)))
            (cons raccum 'NONE)))
         ((null pre)
          (cons raccum latent))
         ((symbolp pre)
          (cons raccum
-               (if (eq pre 'SL) (or sexprw-output*-SL latent) pre)))
+               (if (eq pre 'SL) (or sexprw--output*-SL latent) pre)))
         (t
          (error "Bad pre-output: %S" pre))))
 
-(defun sexprw-output*-spacing (spacing)
+(defun sexprw--output*-spacing (spacing)
   (cond ((eq spacing 'NL) 'NL)
         ((eq spacing 'SP) " ")
         ((eq spacing 'NONE) "")
