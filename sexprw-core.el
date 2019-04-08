@@ -88,7 +88,7 @@ supporting non-trivial Pks."
                 (let ((pure-text (sexprw-block-pure-text next)))
                   (and (or (string-match sexprw--pure-atom-re pure-text)
                            (sexprw-fail `(match quote is-symbol)))
-                       (or (equal pure-text (symbol-name (cadr pattern)))
+                       (or (string-equal pure-text (symbol-name (cadr pattern)))
                            (sexprw-fail
                             `(match quote equal
                                     ,(symbol-name (cadr pattern)))))
@@ -363,12 +363,14 @@ all of its entries are equivalent according to `sexprw-entry-equal'."
            ok))
         ((or (eq (car a) 'rep) (eq (car b) 'rep))
          nil)
-        ((and (eq (car a) 'block) (eq (car b) 'block))
-         ;; FIXME: could compare sexpagons (if exist), slightly more equalities
-         (equal (sexprw-block-text a)
-                (sexprw-block-text b)))
-        (t nil)))
-
+        ;; ((and (eq (car a) 'block) (eq (car b) 'block))
+        ;;  (equal (sexprw-block-text a)
+        ;;         (sexprw-block-text b)))
+        (t (string-equal
+            (sexprw--emit-to-string
+             (sexprw-output (sexprw-template-entry nil a)))
+            (sexprw--emit-to-string
+             (sexprw-output (sexprw-template-entry nil b)))))))
 
 ;; ============================================================
 ;; User-level Guard utilities
@@ -419,7 +421,7 @@ guard body."
         (let ((item (car worklist)))
           (setq worklist (cdr worklist))
           (cond ((eq (car item) 'block)
-                 (when (equal (sexprw-block-pure-text item) ".")
+                 (when (string-equal (sexprw-block-pure-text item) ".")
                    (setq failed t)))
                 ((eq (car item) 'rep)
                  (setq worklist (append (cdr item) worklist)))
@@ -546,29 +548,36 @@ PreOutput is interpreted left to right: the *last* spacing symbol to occur wins.
     (cons env rests)))
 
 (defun sexprw-template-var (pvar env)
-  (let ((entry (assq pvar env)))
-    (unless entry
+  (let ((entry-pair (assq pvar env)))
+    (unless entry-pair
       (error "No entry for pvar '%s'" pvar))
-    (let ((value (cdr entry)))
-      (cond ((and (consp value) (eq (car value) 'block))
-             (let ((text (sexprw-block-text value))
-                   (lines (sexprw-block-sexpagon value))
-                   (space (if (sexprw-block-onelinep value) 'SP 'NL)))
-               (unless (sexprw-block-onelinep value)
-                 (setq sexprw--template*-multiline t))
-               (cond ((zerop (length text))
-                      ;; no space after empty block
-                      nil)
-                     (lines
-                      (list (cons 'SEXPAGON lines) space))
-                     (t
-                      (list text space)))))
-            ((and (consp value) (eq (car value) 'pre))
-             ;; 'pre entry should already include trailing space
-             (cdr value))
-            ((and (consp value) (eq (car value) 'rep))
-             (error "Depth error for pvar '%s'; value is: %S" pvar value))
-            (t (error "Bad pvar value for pvar '%s': %s" pvar value))))))
+    (sexprw-template-entry pvar (cdr entry-pair))))
+
+(defun sexprw-template-entry (pvar entry)
+  "If PVAR is not nil, it is used to report errors in ENTRY."
+  (let ((value entry))
+    (cond ((and (consp value) (eq (car value) 'block))
+           (let ((text (sexprw-block-text value))
+                 (lines (sexprw-block-sexpagon value))
+                 (space (if (sexprw-block-onelinep value) 'SP 'NL)))
+             (unless (sexprw-block-onelinep value)
+               (setq sexprw--template*-multiline t))
+             (cond ((zerop (length text))
+                    ;; no space after empty block
+                    nil)
+                   (lines
+                    (list (cons 'SEXPAGON lines) space))
+                   (t
+                    (list text space)))))
+          ((and (consp value) (eq (car value) 'pre))
+           ;; 'pre entry should already include trailing space
+           (cdr value))
+          ((and (consp value) (eq (car value) 'rep))
+           (if pvar
+               (error "Depth error for pvar '%s'; value is: %S" pvar value)
+             (error "Depth error; value is: %S" value)))
+          (pvar (error "Bad pvar value for pvar '%s': %s" pvar value))
+          (t (error "Bad value: %s" value)))))
 
 (defun sexprw-template-list-contents (inners env)
   ;; We don't add inter-element spacing here; 

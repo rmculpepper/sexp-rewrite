@@ -211,5 +211,20 @@ A NL part means `newline-and-indent'; a SEXPAGON part means
              (sexprw-emit-sexpagon (cdr fragment)))
             (t (error "Bad output: %S" (car output)))))))
 
+(defun sexprw--emit-to-string (output)
+  "Return a string of the contents of OUTPUT. No indentation is
+performed on newlines, so the result is not very useful. It is
+used to implement a rough form of equality for
+`sexprw-entry-equal'."
+  (mapconcat (lambda (fragment)
+               (cond ((eq fragment 'NL)
+                      "\n")
+                     ((stringp fragment)
+                      fragment)
+                     ((and (consp fragment) (eq (car fragment) 'SEXPAGON))
+                      (mapconcat #'identity (cdr fragment) "\n"))
+                     (t (error "Bad output: %S" (car output)))))
+             output ""))
+
 (provide 'sexprw-text)
 ;;; sexprw-text.el ends here.
