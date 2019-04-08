@@ -386,6 +386,15 @@ On success, return (list ENV), so suitable as the body of a guard function."
              (sexprw-fail `(guard all-distinct ,pvars)))
          (list env))))
 
+(defun sexprw-guard-all-same-atom (env pvar)
+  (let ((repval (sexprw-env-ref env pvar)))
+    (and (consp repval) (eq (car repval) 'rep) (consp (cdr repval))
+         (let ((the-val (cadr repval))
+               (ok t))
+           (dolist (val (cdr repval))
+             (unless (sexprw-entry-equal val the-val) (setq ok nil)))
+           (if ok the-val nil)))))
+
 (defun sexprw-guard-no-dot (env &rest pvars)
   "Check that none of the atoms bound to the PVARS is a dot.
 On failure, return nil; on success, return (list ENV), so suitable as
