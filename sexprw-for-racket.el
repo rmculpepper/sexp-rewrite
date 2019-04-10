@@ -1,4 +1,4 @@
-;;; racket-rewrites.el --- part of sexp-rewrite package  -*- lexical-binding:t -*-
+;;; sexprw-for-racket.el --- tactics for Racket  -*- lexical-binding:t -*-
 
 ;; Copyright 2013-2019 Ryan Culpepper.
 ;; Released under the terms of the GPL version 3 or later.
@@ -32,7 +32,7 @@
 ;; Most of them are slightly unsafe.
 
 ;; ============================================================
-;; Using racket-rewrites
+;; Using Racket tactics
 
 ;; Most of the tactics below have strings following the definition
 ;; that let you see the effect of the tactic.
@@ -594,5 +594,5 @@ add1
       (error 'who "it's bad")
       (handle the thing)))
 
-(provide 'racket-rewrites)
-;;; racket-rewrites.el ends here.
+(provide 'sexprw-for-racket)
+;;; sexprw-for-racket.el ends here.

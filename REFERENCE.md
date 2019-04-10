@@ -75,7 +75,7 @@ The following nonterminals are defined by the sexp-rewrite library:
 ## Examples
 
 This section illustrates the sexprw tactic language with some examples
-from the `racket-rewrites.el` file.
+from the `sexprw-for-racket.el` file.
 
 The `define-absorb-lambda` tactic turns a definition of a variable
 with an explicit `lambda` expression into a function-style definition.

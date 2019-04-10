@@ -23,10 +23,10 @@ annotations.
 ## Try it out
 
 Visit `sexprw.el` and evaluate the buffer (`M-x eval-buffer`).
-Then visit `racket-rewrites.el` and evaluate that buffer too.
+Then visit `sexprw-for-racket.el` and evaluate that buffer too.
 
-Most of the rewrite rules (or "tactics") in `racket-rewrites.el` have
-examples after them.  Go to the example labeled "`example for
+Most of the rewrite rules (or "tactics") in `sexprw-for-racket.el`
+have examples after them.  Go to the example labeled "`example for
 if-to-cond...`" and place the cursor at the first left
 parenthesis---that is, at `(if (< x 10)...`.
 
