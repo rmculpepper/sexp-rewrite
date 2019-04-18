@@ -72,7 +72,7 @@ Matching builds an Env: an alist mapping pvar symbols to EnvValue.
 
   EnvValue ::= Block                    ; see `sexprw-range-to-block'
              | (cons 'rep EnvValue)     ; representing depth>0 list
-             | (cons 'pre PreOutput)    ; representing computed output
+             | (cons 'pre Output)       ; representing computed output
 
 The (pREP P Pk) pattern represents (P ... Pk): match as many P as
 possible such that it is still possible to match Pk afterwards (then
@@ -332,8 +332,8 @@ point is meaningless)."
 
 (defun sexprw--check-nonlinear-patterns (env0)
   "Return t ENV0 has the property that if any pattern variable
-occurs multiple times (that is, it is used \"nonlinearly\"),
-all of its entries are equivalent according to `sexprw-entry-equal'."
+occurs multiple times (that is, it is used \"nonlinearly\"), all of
+its entries are equivalent according to `sexprw-env-entry-equal'."
   ;; FIXME: quadratic
   (let ((ok t)
         (env env0))
@@ -344,12 +344,12 @@ all of its entries are equivalent according to `sexprw-entry-equal'."
         (setq env rest-env)
         (let ((entry2 (assq key1 rest-env)))
           (when entry2
-            (unless (sexprw-entry-equal (cdr entry1) (cdr  entry2))
+            (unless (sexprw-env-entry-equal (cdr entry1) (cdr  entry2))
               (sexprw-fail `(nonlinear-pvar ,key1 env= ,env0))
               (setq ok nil))))))
     ok))
 
-(defun sexprw-entry-equal (a b)
+(defun sexprw-env-entry-equal (a b)
   "Return t if the EnvEntries A and B are equivalent."
   (cond ((and (eq (car a) 'rep) (eq (car b) 'rep)
               (= (length a) (length b)))
@@ -357,7 +357,7 @@ all of its entries are equivalent according to `sexprw-entry-equal'."
                (bs (cdr b))
                (ok t))
            (while (and as bs)
-             (setq ok (sexprw-entry-equal (car as) (car bs)))
+             (setq ok (sexprw-env-entry-equal (car as) (car bs)))
              (setq as (cdr as))
              (setq bs (cdr bs)))
            ok))
@@ -366,11 +366,14 @@ all of its entries are equivalent according to `sexprw-entry-equal'."
         ;; ((and (eq (car a) 'block) (eq (car b) 'block))
         ;;  (equal (sexprw-block-text a)
         ;;         (sexprw-block-text b)))
-        (t (string-equal
-            (sexprw--emit-to-string
-             (sexprw-output (sexprw-template-entry nil a)))
-            (sexprw--emit-to-string
-             (sexprw-output (sexprw-template-entry nil b)))))))
+        (t (sexprw-output-equal (sexprw-template-entry nil a)
+                                (sexprw-template-entry nil b)))))
+
+(defun sexprw-output-equal (a b)
+  "Return t if the Output A is equal to the Output B."
+  ;; FIXME: ref for Output
+  (string-equal (sexprw--emit-to-string (sexprw-output a))
+                (sexprw--emit-to-string (sexprw-output b))))
 
 ;; ============================================================
 ;; User-level Guard utilities
@@ -406,7 +409,7 @@ On success, return (list ENV), so suitable as the body of a guard function."
          (let ((the-val (cadr repval))
                (ok t))
            (dolist (val (cdr repval))
-             (unless (sexprw-entry-equal val the-val) (setq ok nil)))
+             (unless (sexprw-env-entry-equal val the-val) (setq ok nil)))
            (if ok the-val nil)))))
 
 (defun sexprw-guard-no-dot (env &rest pvars)
@@ -440,7 +443,7 @@ guard body."
 
 (defun sexprw-template* (template env) ;; PreOutput
   "Interpret core TEMPLATE using the pattern variables of ENV
-to produce a PreOutput.
+to produce an Output.
 
 The following grammar describes core templates:
 
@@ -456,19 +459,19 @@ The following grammar describes core templates:
       | (NL)            ; latent newline
       | (tREP T vars)   ; repetition
 
-The result is PreOutput:
+The result is Output:
 
-  PreOutput = (treeof PreOutputPart)
-  PreOutputPart ::= string
-                  | SP
-                  | NL
-                  | SL
-                  | NONE
-                  | (SEXPAGON . ListOfString)
-                  | (SL=nil . PreOutput)
-                  | (SL=NL . PreOutput)
+  Output = (treeof OutputPart)
+  OutputPart ::= string
+               | SP
+               | NL
+               | SL
+               | NONE
+               | (SEXPAGON . ListOfString)
+               | (SL=nil . Output)
+               | (SL=NL . Output)
 
-PreOutput is interpreted left to right: the *last* spacing symbol to occur wins."
+Output is interpreted left to right: the *last* spacing symbol to occur wins."
   (cond ((stringp template)
          template)
         ((not (consp template))
@@ -582,7 +585,7 @@ PreOutput is interpreted left to right: the *last* spacing symbol to occur wins.
 (defun sexprw-template-list-contents (inners env)
   ;; We don't add inter-element spacing here; 
   ;; each element should add its own trailing spacing.
-  (let ((accum (list '()))) ; nil or (list PreOutput) -- FIXME ?!
+  (let ((accum (list '()))) ; nil or (list Output) -- FIXME ?!
     (dolist (inner inners)
       (setq accum (cons accum (sexprw-template* inner env))))
     accum))
@@ -591,17 +594,17 @@ PreOutput is interpreted left to right: the *last* spacing symbol to occur wins.
 (defvar sexprw--output*-SL nil)
 
 (defun sexprw-output (pre)
-  "Process the PreOutput PRE into Output.
+  "Process the Output PRE into Emittable.
 
-See `sexprw-template*' for PreOutput; see `sexprw-emit' for Output."
+See `sexprw-template*' for PreOutput; see `sexprw-emit' for Emittable."
   (let ((result  ;; (cons rev-output latent-space)
          (let ((sexprw--output*-SL nil)) ;; fluid-let
            (sexprw--output* pre nil 'NONE))))
     (reverse (car result))))
 
 (defun sexprw--output* (pre raccum latent)
-  "Process the PreOutput PRE with reversed Output RACCUM and
-latent Spacing LATENT into a (cons ReversedOutput Spacing)."
+  "Process the Output PRE with reversed Emittable RACCUM and
+latent Spacing LATENT into a (cons ReversedEmittable Spacing)."
   (cond ((and (consp pre) (eq (car pre) 'SEXPAGON))
          (let* ((raccum (cons (sexprw--output*-spacing latent) raccum))
                 (raccum (cons pre raccum)))

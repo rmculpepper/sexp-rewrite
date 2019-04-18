@@ -188,34 +188,32 @@ returns nil."
 ;; ============================================================
 ;; Emit Output
 
-(defun sexprw-emit (output)
-  "Write OUTPUT at point.
+(defun sexprw-emit (parts)
+  "Write the Emittable PARTS at point.
 
-The following grammar describes Output:
+The following grammar describes Emittable:
 
-  Output = (listof OutputPart)
-  OutputPart ::= string
-               | NL
-               | (SEXPAGON . ListOfString)
+  Emittable = (listof EmittablePart)
+  EmittablePart ::= string
+                  | NL
+                  | (SEXPAGON . ListOfString)
 
 A NL part means `newline-and-indent'; a SEXPAGON part means
 `sexprw-emit-sexpagon'."
-  (while output
-    (let ((fragment (car output)))
-      (setq output (cdr output))
-      (cond ((eq fragment 'NL)
-             (newline-and-indent))
-            ((stringp fragment)
-             (insert fragment))
-            ((and (consp fragment) (eq (car fragment) 'SEXPAGON))
-             (sexprw-emit-sexpagon (cdr fragment)))
-            (t (error "Bad output: %S" (car output)))))))
+  (dolist (fragment parts)
+    (cond ((eq fragment 'NL)
+           (newline-and-indent))
+          ((stringp fragment)
+           (insert fragment))
+          ((and (consp fragment) (eq (car fragment) 'SEXPAGON))
+           (sexprw-emit-sexpagon (cdr fragment)))
+          (t (error "Bad emittable part: %S" fragment)))))
 
-(defun sexprw--emit-to-string (output)
-  "Return a string of the contents of OUTPUT. No indentation is
+(defun sexprw--emit-to-string (parts)
+  "Return a string of the Emittable PARTS. No indentation is
 performed on newlines, so the result is not very useful. It is
 used to implement a rough form of equality for
-`sexprw-entry-equal'."
+`sexprw-output-equal'."
   (mapconcat (lambda (fragment)
                (cond ((eq fragment 'NL)
                       "\n")
@@ -223,8 +221,8 @@ used to implement a rough form of equality for
                       fragment)
                      ((and (consp fragment) (eq (car fragment) 'SEXPAGON))
                       (mapconcat #'identity (cdr fragment) "\n"))
-                     (t (error "Bad output: %S" (car output)))))
-             output ""))
+                     (t (error "Bad emittable part: %S" fragment))))
+             parts ""))
 
 (provide 'sexprw-text)
 ;;; sexprw-text.el ends here.
