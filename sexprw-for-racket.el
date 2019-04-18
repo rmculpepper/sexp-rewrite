@@ -389,7 +389,7 @@
       ;; each $uname is $name (nonlinear pvars don't work here,
       ;; different depths :(
       (dolist ($uname-entry $uname-entries)
-        (unless (sexprw-entry-equal $uname-entry $name-entry)
+        (unless (sexprw-env-entry-equal $uname-entry $name-entry)
           ;; (message "$uname %S failed to match $name %S"
           ;;          $uname-entry $name-entry)
           (sexprw-fail `(...-to-optionals name/uname uname-entry= ,uname-entry name-entry= ,name-entry))
@@ -441,8 +441,8 @@
   (lambda (env)
     ;; If $default = $rest, rewrite to null
     ;; Unsafe if $default *contains* $rest
-    (if (sexprw-entry-equal (sexprw-env-ref env '$default)
-                            (sexprw-env-ref env '$rest))
+    (if (sexprw-env-entry-equal (sexprw-env-ref env '$default)
+                                (sexprw-env-ref env '$rest))
         (list (cons (cons '$default (sexprw-template 'null env)) env))
       (list env)))
   (define ($name $arg ... [$optional-arg $default]) !NL $body))
@@ -457,8 +457,8 @@
   (lambda (env)
     ;; If $default = $rest, rewrite to null
     ;; Unsafe if $default *contains* $rest
-    (if (sexprw-entry-equal (sexprw-env-ref env '$default)
-                            (sexprw-env-ref env '$rest))
+    (if (sexprw-env-entry-equal (sexprw-env-ref env '$default)
+                                (sexprw-env-ref env '$rest))
         (list (cons (cons '$default (sexprw-template 'null env)) env))
       (list env)))
   (define ($name $arg ... [$optional-arg $default]) !NL $body))
