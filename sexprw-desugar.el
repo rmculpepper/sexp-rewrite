@@ -26,6 +26,7 @@ The following grammar describes patterns and their desugaring rules:
                                               ; grouped as splice
        | (!OR PP*)      ~ (OR P*)
        | (!AND PP*)     ~ (AND P*)
+       | (!NOT PP)      ~ (NOT P)
        | (!GUARD P expr)~ (GUARD P expr)
 
 The following grammar describes templates and their desugaring rules:
@@ -75,6 +76,10 @@ The following grammar describes templates and their desugaring rules:
                            (mapcar (lambda (p) (sexprw-desugar-pattern p nil))
                                    (cddr pretty)))
                    nil))))
+        ((eq (car pretty) '!NOT)
+         (if template
+             (error "Bad template (!NOT not allowed): %S" pretty)
+           (list 'NOT (sexprw-desugar-pattern (nth 1 pretty) nil))))
         ((eq (car pretty) '!GUARD)
          (if template
              (error "Bad template (!GUARD not allowed): %S" pretty)

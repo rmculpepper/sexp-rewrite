@@ -65,6 +65,7 @@ The following grammar describes core patterns:
       | (pREP P Pk)
       | (AND P*)
       | (OR P*)
+      | (NOT P)
       | (GUARD P expr)
 
 Matching builds an Env: an alist mapping pvar symbols to EnvValue.
@@ -113,6 +114,14 @@ supporting non-trivial Pks."
              (setq alternatives (cdr alternatives)))
            (or result
                (sexprw-fail `(match or inners= ,(reverse rfailinfos))))))
+        ((eq (car pattern) 'NOT)
+         (let* ((init-point (point))
+                (result (let ((sexprw-failure-info nil)) ;; fluid-let
+                          (sexprw-match (cadr pattern)))))
+           (cond (result
+                  (goto-char init-point)
+                  (sexprw-fail `(match not env= ,(car result))))
+                 (t (goto-char (point-max)) (list nil)))))
         ((eq (car pattern) 'AND)
          (let ((init-point (point))
                (renvs nil)
