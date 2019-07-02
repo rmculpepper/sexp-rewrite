@@ -1,6 +1,7 @@
-;;; sexp-rewrite.el --- pattern-based rewriting of sexp-structured code  -*- lexical-binding:t -*-
+;; sexprw.el --- Pattern-based rewriting of sexp-structured code.  -*- lexical-binding:t -*-
 ;; Copyright 2013-2019 Ryan Culpepper.
 ;; Author: Ryan Culpepper <ryanc@racket-lang.org>
+;; Package-Requires: ((emacs "24.4"))
 ;; Version: 0.0.5
 ;; URL: https://github.com/rmculpepper/sexp-rewrite
 ;; Homepage: https://github.com/rmculpepper/sexp-rewrite
@@ -27,7 +28,6 @@
 ;;     - might be useful for recursive processing ??
 ;; - package nicely in Emacs idiom
 ;;   - minor mode ??
-;;   - make sure keybindings are added politely
 ;;   - customization options ??
 ;; - tweak whitespace handling ??
 ;; - hook for scan-sexps replacement
@@ -123,7 +123,7 @@ disabled tactics can still be run via `sexprw-execute-tactic', etc."
           (define-key map "w" 'sexprw-kill-sexpagon-region)
           (define-key map "y" 'sexprw-yank-sexpagon)
 
-          (define-key map (kbd "M-SPC") 'sexprw-collapse-space/move-sexps)
+          (define-key map (kbd "M-SPC") 'sexprw-collapse-space-move-sexps)
           (define-key map [tab] 'sexprw-indent-rigidly)
 
           (define-key map (kbd "r e")
@@ -194,11 +194,11 @@ Customizable via the variable `sexprw-auto-definition-tactics'."
   (setq sexprw-failure-info nil)
   (let ((rused (sexprw-run-tactics-until-success tactic-names times0)))
     (cond ((consp rused)
-           (cond ((sexprw-length= 1 rused)
+           (cond ((sexprw-utils-length= 1 rused)
                   (message "Applied tactic %s" (car rused)))
                  (t (message "Applied tactics: %s" (reverse rused)))))
           (t
-           (cond ((sexprw-length= 1 tactic-names)
+           (cond ((sexprw-utils-length= 1 tactic-names)
                   (message "Tactic %s not applicable" (car tactic-names)))
                  (t (message "No applicable tactic")))))))
 
@@ -209,7 +209,7 @@ Customizable via the variable `sexprw-auto-definition-tactics'."
   (let* ((nt-val (sexprw-nt-value tactic-name))
          (nt-pattern (nth 1 nt-val)))
     (and (let ((sexprw-current-operation `(tactic ,tactic-name))) ; fluid-let
-           (sexprw-rewrite/ast nt-pattern '(VAR $out)))
+           (sexprw-rewrite-ast nt-pattern '(VAR $out)))
          (list tactic-name))))
 
 (defun sexprw-run-tactics-until-success (tactics &optional times0 respect-disabled)
@@ -237,23 +237,23 @@ Customizable via the variable `sexprw-auto-definition-tactics'."
     (read-from-minibuffer "Pattern: " nil nil t 'sexprw-pattern-history)
     (read-from-minibuffer "Template: " nil nil t 'sexprw-template-history)))
   ;; (message "parsed pattern = %S" (sexprw-desugar-pattern pattern nil))
-  (sexprw-rewrite/ast (sexprw-desugar-pattern pattern nil)
+  (sexprw-rewrite-ast (sexprw-desugar-pattern pattern nil)
                       (sexprw-desugar-pattern template t)
                       guard))
 
-(defun sexprw-rewrite/ast (pattern template &optional guard)
+(defun sexprw-rewrite-ast (pattern template &optional guard)
   (save-excursion
     (sexprw-skip-whitespace)
     (let* ((init-point (point))
            ;; puts point after pattern match
-           (replacement (sexprw-compute-rewrite/ast pattern template guard)))
+           (replacement (sexprw-compute-rewrite-ast pattern template guard)))
       (and replacement
            (progn
              (delete-and-extract-region init-point (point))
              (sexprw-emit replacement)
              t)))))
 
-(defun sexprw-compute-rewrite/ast (pattern template &optional guard)
+(defun sexprw-compute-rewrite-ast (pattern template &optional guard)
   ;; (message "pattern = %S" pattern)
   ;; (message "template = %S" template)
   (let ((env (sexprw-match pattern)))
@@ -299,7 +299,7 @@ Customizable via the variable `sexprw-auto-definition-tactics'."
 
 (defun sexprw-entry-equal (a b)
   (cond ((and (eq (car a) 'rep) (eq (car b) 'rep)
-              (sexprw-length= a b))
+              (sexprw-utils-length= a b))
          (let ((as (cdr a)) 
                (bs (cdr b))
                (ok t))
@@ -688,7 +688,7 @@ of matched term(s)."
 (defun sexprw-pattern-variables (pattern onto)
   ;; Accept templates too
   (cond ((eq (car pattern) 'VAR)
-         (when (sexprw-min-length 3 pattern)
+         (when (sexprw-utils-min-length 3 pattern)
            (let* ((pvar (nth 1 pattern))
                   (nt (nth 2 pattern))
                   (nt-val (sexprw-nt-value nt)))
@@ -978,17 +978,17 @@ guard body."
     (unless vars (error "No repetition vars for tREP: %S" template))
     (let* ((length1 (length (car vals))))
       (dolist (l (cdr vals))
-        (unless (sexprw-length= length1 l)
+        (unless (sexprw-utils-length= length1 l)
           (signal 'template-error 'ellipsis-count-mismatch)))
       (let ((raccum nil))
         (dotimes (_i length1)
-          (let* ((extenv+vals (sexprw-split/extend-env vars vals env))
+          (let* ((extenv+vals (sexprw-split-extend-env vars vals env))
                  (extenv (car extenv+vals)))
             (setq vals (cdr extenv+vals))
             (push (sexprw-template* inner extenv) raccum)))
         (nreverse raccum)))))
 
-(defun sexprw-split/extend-env (vars vals env)
+(defun sexprw-split-extend-env (vars vals env)
   (let* ((val1s (mapcar #'car vals))
          (rests (mapcar #'cdr vals)))
     (while vars
@@ -1146,7 +1146,7 @@ guard body."
   (let ((sexprw-current-operation 'search)) ;; fluid-let
     (setq sexprw-failure-info nil)
     (let ((init-point (point))
-          (result (sexprw-search-pattern/ast (sexprw-desugar-pattern pattern nil))))
+          (result (sexprw-search-pattern-ast (sexprw-desugar-pattern pattern nil))))
       (cond (result
              (push-mark init-point)
              (message "Pattern found; mark saved where search started"))
@@ -1154,7 +1154,7 @@ guard body."
              (goto-char init-point)
              (message "Pattern not found"))))))
 
-(defun sexprw-search-pattern/ast (pattern)
+(defun sexprw-search-pattern-ast (pattern)
   ;; Note: moves point
   ;; (message "search pattern = %S" pattern)
   (let ((success nil)
@@ -1212,7 +1212,7 @@ of list."
   (let ((sexprw-current-operation 'search)) ;; fluid-let
     (setq sexprw-failure-info nil)
     (let ((init-point (point))
-          (result (sexprw-search-pattern/ast (sexprw-desugar-pattern pattern nil))))
+          (result (sexprw-search-pattern-ast (sexprw-desugar-pattern pattern nil))))
       (cond (result
              (push-mark init-point)
              (message "Pattern found; mark saved where search started")
@@ -1339,7 +1339,7 @@ at the same column as the first line."
                (stringp (car clauses)))
       (setq docstring (car clauses))
       (setq clauses (cdr clauses)))
-    (when (and (sexprw-min-length 2 clauses)
+    (when (and (sexprw-utils-min-length 2 clauses)
                (eq (car clauses) ':attributes))
       (setq attrs (cadr clauses))
       (dolist (attr attrs)
@@ -1347,7 +1347,7 @@ at the same column as the first line."
           (error "Expected symbol for attribute: %S" attr)))
       (setq clauses (cddr clauses)))
     (let* ((patterns (mapcar #'sexprw-parse-clause clauses))
-           (pattern (if (sexprw-length= 1 patterns)
+           (pattern (if (sexprw-utils-length= 1 patterns)
                         (car patterns)
                       (cons 'OR patterns))))
       (list 'nt pattern attrs docstring))))
@@ -1357,7 +1357,7 @@ at the same column as the first line."
         (pattern nil))
     (unless (and (consp parts)
                  (eq (car parts) 'pattern)
-                 (sexprw-min-length 2 parts))
+                 (sexprw-utils-min-length 2 parts))
       (error "Bad sexp-rewrite nonterminal clause: %S" clause))
     (let ((pattern+parts (sexprw-parse-pattern+clauses (cdr parts) clause)))
       (setq pattern (car pattern+parts))
@@ -1375,13 +1375,13 @@ at the same column as the first line."
     (setq parts (cdr parts))
     (while (and parts (keywordp (car parts)))
       (cond ((eq (car parts) ':guard)
-             (unless (sexprw-max-length 2 parts)
+             (unless (sexprw-utils-max-length 2 parts)
                (error "Missing expression for :guard option: %S" whole))
              (setq pattern `(GUARD ,pattern ,(nth 1 parts)))
              (setq parts (nthcdr 2 parts)))
             ((eq (car parts) ':with)
              ;; FIXME: support (pvar ...), etc
-             (unless (sexprw-max-length 3 parts)
+             (unless (sexprw-utils-max-length 3 parts)
                (error "Missing variable or template for :with option: %S" whole))
              (let* ((pvar (nth 1 parts))
                     (template (nth 2 parts))
@@ -1512,7 +1512,7 @@ at the same column as the first line."
 
 ;; ============================================================
 
-(defun sexprw-collapse-space/move-sexps (count)
+(defun sexprw-collapse-space-move-sexps (count)
   "Collapse space after point, moving COUNT (or all) following sexps.
 If COUNT is nil, moves all following sexps."
   (interactive "P") 
@@ -1716,5 +1716,6 @@ indentation of the subsequent lines."
 
 ;; ============================================================
 
-(provide 'sexp-rewrite)
-;;; sexp-rewrite.el ends here.
+(provide 'sexprw)
+
+;;; sexprw.el ends here
