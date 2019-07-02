@@ -1,28 +1,13 @@
 ;;; sexp-rewrite.el --- pattern-based rewriting of sexp-structured code  -*- lexical-binding:t -*-
-
 ;; Copyright 2013-2019 Ryan Culpepper.
-;; Released under the terms of the GPL version 3 or later;
-;; see the text after `sexprw-legal-notice' for details.
-
-;; Version: 0.04
-
-(defconst sexprw-copyright    "Copyright 2013-2019 Ryan Culpepper")
-(defconst sexprw-version      "0.04")
-(defconst sexprw-author-name  "Ryan Culpepper")
-(defconst sexprw-author-email "ryanc@racket-lang.org")
-(defconst sexprw-web-page     "https://github.com/rmculpepper/sexp-rewrite")
-
-(defconst sexprw-legal-notice
-  "This program is free software: you can redistribute it and/or modify
-it under the terms of the GNU General Public License as published by
-the Free Software Foundation, either version 3 of the License, or (at
-your option) any later version.
-
-This program is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
-General Public License at http://www.gnu.org/licenses/gpl-3.0.html
-for more details.")
+;; Author: Ryan Culpepper <ryanc@racket-lang.org>
+;; Version: 0.0.5
+;; URL: https://github.com/rmculpepper/sexp-rewrite
+;; Homepage: https://github.com/rmculpepper/sexp-rewrite
+;; License:
+;; Released under the terms of the GPL version 3 or later
+;; Licensed with the GNU GPL v3 or later, see:
+;; <https://www.gnu.org/licenses/>.
 
 ;;; Commentary:
 
@@ -36,7 +21,7 @@ for more details.")
 ;; - documentation for individual tactics ??
 ;; - support COMMENT var kind
 ;; - better comment handling (custom regexp? may need hook)
-;; - improve guard support 
+;; - improve guard support
 ;;   - require guard extends env?
 ;;   - add ranges back to block matches
 ;;     - might be useful for recursive processing ??
@@ -53,53 +38,49 @@ for more details.")
 ;;   - eg, move let/let*/letrec bindings to <interactive point>
 ;; - put rewrite rules in "bundles", and enable different "bundles" for
 ;;   different major modes (scheme-mode, racket-mode, emacs-lisp-mode, ...)
-
+;; - Don't just automatically clobber things with an "automatic" pattern.
+;; Instead, do a search for valid patterns, and present them namelessly. This
+;; might require better performance to do, so be ready to profile.
 ;; long term
 ;; - port to DrRacket
 ;; - use DrRacket semantic info (eg, freevars) for safety
 
-;; ============================================================
-;; Misc notes
+;; ============================================================ Misc notes
 
-;; Matching functions, etc return nil on failure, only raise error on
-;; bad input (illegal pattern, etc).
+;; This paper by Antonio Leitao
+;; <URL: https://mafiadoc.com//viewer/web/viewer.html?file=https%3A%2F%2Fmafiadoc.com%2Fdownload%2Fa-formal-pattern-language-for-refactoring-of-lisp-programs_5a16b5801723ddcb72437abf.html%3Freader%3D1>
+;; has some good ideas about pattern matching refactoring, in his case on a
+;; Common Lisp environment. In an attempt to order my summary from easiest to
+;; most difficult, here it is:
+
+;; - An equivalent to his `??' and `?*' pseudo-regex operators would be
+;; nice. Perhaps just swap the leading `?' with a `!'. `?+' is essentially
+;; `$var:rest'.
+;; - `defequivs' can save a lot of programming of redundant tactics
+;; (combination explosion).
+;; - Executing arbitrary code in the patterns (esp. for user input) would be
+;; good. He has `?funcall' and `?map' for that
+;; - The "expert system" that was able to automatically generate patterns based
+;; on an example case would be nice to have. It needs a small amount of
+;; language-specific information, but it should be possible to have an API for
+;; writing that in for Guile, Sly & Slime (CL), Leiningen (Clojure), and other
+;; lisps.
+
+;; Matching functions, etc return nil on failure, only raise error on bad input
+;; (illegal pattern, etc).
 
 ;; ============================================================
 ;; Keybindings
 
 ;;; Code:
 
-(defvar sexprw-mode-map
-  (let ((mainmap (make-sparse-keymap))
-        (map (make-sparse-keymap)))
-    (define-key mainmap (kbd "C-c C-s") map)
-
-    (define-key map "e" 'sexprw-auto-expression)
-    (define-key map "d" 'sexprw-auto-definition)
-    (define-key map "x" 'sexprw-execute-tactic)
-    (define-key map "s" 'sexprw-search-pattern)
-    (define-key map "i" 'sexprw-search-rewrite)
-    (define-key map "[" 'sexprw-squarify)
-    (define-key map "(" 'sexprw-roundify)
-
-    (define-key map "k" 'sexprw-kill-next-sexpagon-sexp)
-    (define-key map "w" 'sexprw-kill-sexpagon-region)
-    (define-key map "y" 'sexprw-yank-sexpagon)
-
-    (define-key map (kbd "M-SPC") 'sexprw-collapse-space/move-sexps)
-    (define-key map [tab] 'sexprw-indent-rigidly)
-
-    (define-key map (kbd "r e")
-      (lambda () (interactive) (sexprw-auto-expression 100)))
-    (define-key map (kbd "r d")
-      (lambda () (interactive) (sexprw-auto-definition 100)))
-    mainmap))
+(defvar sexprw-mode-map nil)
 
 (defvar sexprw-auto-expression-tactics nil
   "List of tactics tried by `sexprw-auto-expression'.")
 (defvar sexprw-auto-definition-tactics nil
   "List of tactics tried by `sexprw-auto-definition'.")
-  
+
 (defvar sexprw-tactic-history nil)
 (defvar sexprw-pattern-history nil)
 (defvar sexprw-template-history nil)
@@ -118,14 +99,45 @@ disabled tactics can still be run via `sexprw-execute-tactic', etc."
 (define-minor-mode sexprw-mode
   "Minor mode for pattern-based rewrite of sexp-structured code."
   ;; Implicitly activates sexprw-mode-map when enabled.
-  :init-value nil)
+  :init-value nil
+  :lighter "SXP")
 
-;; FIXME: This should likely be in an emacs-lisp-rewrite.el with corresponding
-;; rewrite rules.
+(defun sexprw-setup ()
+  "Default setup decisions of the author:
+- add hooks for lispy modes
+- add default keybindings"
+  (setq sexprw-mode-map
+        (let ((mainmap (make-sparse-keymap))
+              (map (make-sparse-keymap)))
+          (define-key mainmap (kbd "C-c C-s") map)
+
+          (define-key map "e" 'sexprw-auto-expression)
+          (define-key map "d" 'sexprw-auto-definition)
+          (define-key map "x" 'sexprw-execute-tactic)
+          (define-key map "s" 'sexprw-search-pattern)
+          (define-key map "i" 'sexprw-search-rewrite)
+          (define-key map "[" 'sexprw-squarify)
+          (define-key map "(" 'sexprw-roundify)
+
+          (define-key map "k" 'sexprw-kill-next-sexpagon-sexp)
+          (define-key map "w" 'sexprw-kill-sexpagon-region)
+          (define-key map "y" 'sexprw-yank-sexpagon)
+
+          (define-key map (kbd "M-SPC") 'sexprw-collapse-space/move-sexps)
+          (define-key map [tab] 'sexprw-indent-rigidly)
+
+          (define-key map (kbd "r e")
+            (lambda () (interactive) (sexprw-auto-expression 100)))
+          (define-key map (kbd "r d")
+            (lambda () (interactive) (sexprw-auto-definition 100)))
+          mainmap))
+  ;; FIXME: These should likely be in an emacs-lisp-rewrite.el (or similar )with
+  ;; corresponding rewrite rules.
 ;;;###autoload
-(add-hook 'emacs-lisp-mode-hook #'sexprw-mode)
+  (add-hook 'emacs-lisp-mode-hook #'sexprw-mode)
 ;;;###autoload
-(add-hook 'scheme-mode-hook #'sexprw-mode)
+  (add-hook 'scheme-mode-hook #'sexprw-mode)
+  (add-hook 'lisp-mode-hook #'sexprw-mode))
 
 (defun sexprw-disable-tactic (tactic-name)
   (interactive
@@ -182,11 +194,11 @@ Customizable via the variable `sexprw-auto-definition-tactics'."
   (setq sexprw-failure-info nil)
   (let ((rused (sexprw-run-tactics-until-success tactic-names times0)))
     (cond ((consp rused)
-           (cond ((= (length rused) 1)
+           (cond ((sexprw-length= 1 rused)
                   (message "Applied tactic %s" (car rused)))
                  (t (message "Applied tactics: %s" (reverse rused)))))
           (t
-           (cond ((= (length tactic-names) 1)
+           (cond ((sexprw-length= 1 tactic-names)
                   (message "Tactic %s not applicable" (car tactic-names)))
                  (t (message "No applicable tactic")))))))
 
@@ -287,7 +299,7 @@ Customizable via the variable `sexprw-auto-definition-tactics'."
 
 (defun sexprw-entry-equal (a b)
   (cond ((and (eq (car a) 'rep) (eq (car b) 'rep)
-              (= (length a) (length b)))
+              (sexprw-length= a b))
          (let ((as (cdr a)) 
                (bs (cdr b))
                (ok t))
@@ -676,7 +688,7 @@ of matched term(s)."
 (defun sexprw-pattern-variables (pattern onto)
   ;; Accept templates too
   (cond ((eq (car pattern) 'VAR)
-         (when (> (length pattern) 2)
+         (when (sexprw-min-length 3 pattern)
            (let* ((pvar (nth 1 pattern))
                   (nt (nth 2 pattern))
                   (nt-val (sexprw-nt-value nt)))
@@ -964,20 +976,17 @@ guard body."
                              (cdr value))))
                        vars)))
     (unless vars (error "No repetition vars for tREP: %S" template))
-    (let* ((lengths (mapcar #'length vals))
-           (length1 (car lengths)))
-      (dolist (l lengths)
-        (unless (= l length1)
+    (let* ((length1 (length (car vals))))
+      (dolist (l (cdr vals))
+        (unless (sexprw-length= length1 l)
           (signal 'template-error 'ellipsis-count-mismatch)))
-      (let ((raccum '()))
+      (let ((raccum nil))
         (dotimes (_i length1)
           (let* ((extenv+vals (sexprw-split/extend-env vars vals env))
                  (extenv (car extenv+vals)))
             (setq vals (cdr extenv+vals))
-            (setq raccum 
-                  (cons (sexprw-template* inner extenv)
-                        raccum))))
-        (reverse raccum)))))
+            (push (sexprw-template* inner extenv) raccum)))
+        (nreverse raccum)))))
 
 (defun sexprw-split/extend-env (vars vals env)
   (let* ((val1s (mapcar #'car vals))
@@ -999,7 +1008,7 @@ guard body."
                    (space (if (sexprw-block-onelinep value) 'SP 'NL)))
                (unless (sexprw-block-onelinep value)
                  (setq sexprw-template*-multiline t))
-               (cond ((zerop (length text))
+               (cond ((sexprw-empty text)
                       ;; no space after empty block
                       nil)
                      (lines
@@ -1307,7 +1316,7 @@ at the same column as the first line."
       (setq lines (cdr lines)))
     (while lines
       (insert "\n")
-      (unless (zerop (length (car lines)))
+      (unless (sexprw-empty lines)
         (indent-to col))
       (insert (car lines))
       (setq lines (cdr lines)))))
@@ -1330,7 +1339,7 @@ at the same column as the first line."
                (stringp (car clauses)))
       (setq docstring (car clauses))
       (setq clauses (cdr clauses)))
-    (when (and (>= (length clauses) 2)
+    (when (and (sexprw-min-length 2 clauses)
                (eq (car clauses) ':attributes))
       (setq attrs (cadr clauses))
       (dolist (attr attrs)
@@ -1338,7 +1347,7 @@ at the same column as the first line."
           (error "Expected symbol for attribute: %S" attr)))
       (setq clauses (cddr clauses)))
     (let* ((patterns (mapcar #'sexprw-parse-clause clauses))
-           (pattern (if (= 1 (length patterns))
+           (pattern (if (sexprw-length= 1 patterns)
                         (car patterns)
                       (cons 'OR patterns))))
       (list 'nt pattern attrs docstring))))
@@ -1348,7 +1357,7 @@ at the same column as the first line."
         (pattern nil))
     (unless (and (consp parts)
                  (eq (car parts) 'pattern)
-                 (>= (length parts) 2))
+                 (sexprw-min-length 2 parts))
       (error "Bad sexp-rewrite nonterminal clause: %S" clause))
     (let ((pattern+parts (sexprw-parse-pattern+clauses (cdr parts) clause)))
       (setq pattern (car pattern+parts))
@@ -1366,13 +1375,13 @@ at the same column as the first line."
     (setq parts (cdr parts))
     (while (and parts (keywordp (car parts)))
       (cond ((eq (car parts) ':guard)
-             (unless (>= (length parts) 2)
+             (unless (sexprw-max-length 2 parts)
                (error "Missing expression for :guard option: %S" whole))
              (setq pattern `(GUARD ,pattern ,(nth 1 parts)))
              (setq parts (nthcdr 2 parts)))
             ((eq (car parts) ':with)
              ;; FIXME: support (pvar ...), etc
-             (unless (>= (length parts) 3)
+             (unless (sexprw-max-length 3 parts)
                (error "Missing variable or template for :with option: %S" whole))
              (let* ((pvar (nth 1 parts))
                     (template (nth 2 parts))
@@ -1406,6 +1415,9 @@ at the same column as the first line."
     (error "define-sexprw-tactic: expected symbol for NAME, got: %S" name))
   `(progn (put ',name 'sexprw-nt (sexprw-parse-tactic-defn ',name ',parts))
           (put ',name 'sexprw-tactic t)
+          ;; Need to store this for (the goal of) pattern searching sexp at
+          ;; point to get sane suggestions.
+          (put ',name 'pattern ',parts)
           ',name))
 
 (defun sexprw-tactic-symbolp (sym)

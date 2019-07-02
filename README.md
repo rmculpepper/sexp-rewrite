@@ -23,8 +23,8 @@ annotations.
 ## Try it out
 
 Visit `sexp-rewrite.el` and evaluate the buffer (`M-x eval-buffer`).
-Then visit `racket-rewrites.el` and evaluate that buffer too.
-
+Then visit `racket-rewrites.el` and evaluate that buffer too. Insert
+`(sexprw-setup)` in your  init to get the default keybindings and mode hooks.
 Most of the rewrite rules (or "tactics") in `racket-rewrites.el` have
 examples after them.  Go to the example labeled "`example for
 if-to-cond...`" and place the cursor at the first left

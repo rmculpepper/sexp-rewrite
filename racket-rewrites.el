@@ -28,7 +28,7 @@
 
 ;; Every last one of these is unsafe if literals don't have their
 ;; standard bindings.
-;;; 
+;;;
 ;; Most of them are slightly unsafe.
 
 ;; ============================================================
@@ -139,7 +139,7 @@
 (letrec ([odd? (lambda (x) (not (even? x)))]
          [even? (lambda (x) (or (zero? x) (even? (sub1 x))))])
   odd?)
-  
+
 ' ; another example for letrec-to-definitions
 (letrec ([odd? (lambda (x) (not (even? x)))]
          [even? (lambda (x)
