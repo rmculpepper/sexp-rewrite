@@ -157,6 +157,24 @@
 ' ; example for let-to-definitions
 (let ((x 1) (y 2)) (+ x y))
 
+(define-sexprw-nt letvals-kw
+  (pattern let-values)
+  (pattern let*-values)
+  (pattern letrec-values))
+
+(define-sexprw-nt letvals-clause
+  :attributes ($def)
+  (pattern [($name:id ...) $rhs]
+           :with $def (define-values ($name ...) !SL $rhs)))
+
+(define-sexprw-tactic letvals-to-definitions
+  ($letv:letvals-kw ($c:letvals-clause ...) $body:rest)
+  (let () !NL (!@ $c.$def !NL) ... $body))
+
+' ; example for letvals-to-definitions
+(let-values ([(x y) (quotient/remainder 5 2)])
+  (+ x y))
+
 (define-sexprw-tactic let-loop-to-definition
   ;; Unsafe if $name occurs free in %init
   (let $loop:id (($arg:id $init) ...) $body:rest)
@@ -290,7 +308,8 @@
          define-case-lambda-sort-clauses
          define-case-lambda-to-optionals
          define-rest-to-optional
-         define-rest-to-optional2))
+         define-rest-to-optional2
+         define-values1))
 
 (define-sexprw-tactic define-absorb-lambda
   (define $name:id (lambda ($arg ...) $body:rest))
@@ -308,6 +327,10 @@
 (define-sexprw-tactic define-absorb-lambda/curry
   (define $header (lambda ($arg ...) $body:rest))
   (define ($header $arg ...) !NL $body))
+
+(define-sexprw-tactic define-values1
+  (define-values ($name:id) $rhs)
+  (define $name !SL $rhs))
 
 (define-sexprw-tactic splice-begin
   (begin $body:rest)
